@@ -1,0 +1,53 @@
+{
+  "name": "oh-my-opencode-cohub",
+  "version": "1.0.13",
+  "description": "OpenCode 中文智能体编排插件 CoHub - 纯调度模式 / 全中文提示词 / 规范分析代理 / 方案制定代理 / 独立运行",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "oh-my-opencode-cohub": "./dist/cli/index.js"
+  },
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./tui": {
+      "import": "./dist/tui.js",
+      "types": "./dist/tui.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bun build src/index.ts src/tui.ts --outdir dist --target node --format esm --external @opencode-ai/plugin --external @opencode-ai/plugin/* --external @opencode-ai/sdk --external @opencode-ai/sdk/* --external @opentui/core --external @opentui/solid --external zod && bun build src/cli/index.ts --outdir dist/cli --target node --format esm && tsc --emitDeclarationOnly",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "opencode",
+    "plugin",
+    "chinese",
+    "agent",
+    "orchestra",
+    "orchestrator"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.17.0",
+    "@opencode-ai/sdk": "^1.3.17"
+  },
+  "optionalDependencies": {
+    "@opentui/solid": "^0.4.3",
+    "@opentui/core": "^0.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "typescript": "^5.4.0"
+  },
+  "opencode": {
+    "plugin": true
+  }
+}

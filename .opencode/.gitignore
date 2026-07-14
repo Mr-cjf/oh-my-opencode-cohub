@@ -1,0 +1,7 @@
+*
+!opencode.json
+!.gitignore
+!rules/
+!rules/**
+!skills/
+!skills/**
