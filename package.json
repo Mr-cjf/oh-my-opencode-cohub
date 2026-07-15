@@ -1,6 +1,6 @@
 {
   "name": "oh-my-opencode-cohub",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "description": "OpenCode 中文智能体编排插件 CoHub - 纯调度模式 / 全中文提示词 / 规范分析代理 / 方案制定代理 / 独立运行",
   "type": "module",
   "main": "dist/index.js",
