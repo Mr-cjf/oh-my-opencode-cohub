@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## [1.0.18] - 2026-07-15
+
+### 新增
+- `council_session` 工具：真正的多模型并行共识（`src/tools/council.ts`，628 行）
+- Council 预设系统：支持多组 councillor 配置，可通过 `preset` 参数切换
+- 兜底默认配置：无用户配置文件时自动使用 3-councillor 内置预设
+- README 新增 Council 多模型共识配置章节（配置表 + 3 个预设示例）
+
+### 修复
+- councillors 不再引用不存在的 `councillor` agent，直接指定 model
+- 重试逻辑扩展：覆盖 timeout、rate limit、503、429 等瞬态错误
+- CLI `install` 自动写入 council 配置和 `council_session` 工具权限
+
 ## [1.0.17] - 2026-07-15
 
 ### 新增
