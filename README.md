@@ -288,6 +288,19 @@ npm run build
 
 适合深度定制，但需维护自己的分支。
 
+## 版本历史
+
+完整变更记录见 [CHANGELOG.md](./CHANGELOG.md)。
+
+| 版本 | 日期 | 主要变更 |
+|------|------|---------|
+| [1.0.18](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.0.18) | 2026-07-15 | `council_session` 多模型并行共识工具 |
+| [1.0.17](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.0.17) | 2026-07-15 | @council vs @oracle 选择指南 + DEBUG 日志移除 |
+| [1.0.16](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.0.16) | 2026-07-15 | 背景任务事件驱动跟踪 + agent 双重注册 |
+| [1.0.15](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.0.15) | 2026-07-14 | co-orchestrator 完整中文提示词 |
+| [1.0.14](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.0.14) | 2026-07-14 | HTTP 服务器模式兼容修复 |
+| [1.0.13](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.0.13) | 初始发布 | 12 个 co-* 代理 + 纯调度模式 |
+
 ## 许可证
 
 MIT
