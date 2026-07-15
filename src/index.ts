@@ -15,6 +15,7 @@ import { PLANNER_PROMPT } from './prompts/planner';
 import { CHINESE_LANGUAGE_INSTRUCTION } from './instructions/chinese';
 import { TaskTracker } from './task-manager/tracker';
 import { loadCoHubConfig, type AgentOverride } from './config/loader';
+import { createCouncilTool, CouncilManager } from './tools/council';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -221,7 +222,13 @@ const CoHubPlugin: Plugin = async (input, options) => {
     {
       name: 'co-council',
       description: '多模型共识——并行 LLM 综合',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-pro', variant: 'high', prompt: '你是多模型共识协调者。用中文回复。' },
+      config: {
+        mode: 'subagent',
+        model: 'deepseek/deepseek-v4-pro',
+        variant: 'high',
+        prompt: COUNCIL_PROMPT,
+        permission: { council_session: 'allow' as const },
+      },
     },
     {
       name: 'co-rule-user',
@@ -257,6 +264,24 @@ const CoHubPlugin: Plugin = async (input, options) => {
       }
     }
   }
+
+  // ===== Council 初始化（无配置时使用内置默认预设） =====
+  const DEFAULT_COUNCIL_CONFIG = {
+    default_preset: 'default',
+    timeout: 180000,
+    councillor_execution_mode: 'parallel' as const,
+    councillor_retries: 3,
+    presets: {
+      default: {
+        alpha: { model: 'deepseek/deepseek-v4-pro', variant: 'max' },
+        beta: { model: 'deepseek/deepseek-v4-flash', variant: 'high' },
+        gamma: { model: 'minimax/MiniMax-M3', variant: 'medium' },
+      },
+    },
+  };
+  const councilConfig = userConfig.council ?? DEFAULT_COUNCIL_CONFIG;
+  const councilManager = new CouncilManager(input.client, input.directory, councilConfig);
+  const councilTools = createCouncilTool(input, councilManager);
 
   syncAgentConfig();  // 启动时立即写入 agent 配置供 TUI 面板读取
 
@@ -314,6 +339,9 @@ const CoHubPlugin: Plugin = async (input, options) => {
 
     // 方式一：直接返回 agent 字段（HTTP 服务器模式更可靠）
     agent: agentConfigs,
+
+    // council_session 工具（多模型并行共识）
+    tool: councilTools,
 
     // 方式二：config hook 再次写入（确保兼容所有模式）
     config: async (cfg: Record<string, unknown>) => {

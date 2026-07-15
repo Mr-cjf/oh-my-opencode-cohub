@@ -151,6 +151,51 @@ CLI 安装后自动创建 `~/.config/opencode/oh-my-opencode-cohub.json`，这�
 
 > **注意**：同一目录 `~/.config/opencode/oh-my-opencode-cohub/` 下也可放置 `{agent}.md` 提示词覆盖文件（见「自定义提示词」章节），与 JSON 配置文件共存。
 
+### Council 多模型共识配置
+
+`co-council` 代理通过 `council_session` 工具并行调用多个模型（councillors），综合各方观点形成共识。councillors 的数量、模型、推理强度完全可配置：
+
+```json
+{
+  "council": {
+    "default_preset": "default",
+    "timeout": 180000,
+    "councillor_execution_mode": "parallel",
+    "councillor_retries": 3,
+    "presets": {
+      "default": {
+        "alpha": { "model": "deepseek/deepseek-v4-pro", "variant": "max" },
+        "beta":  { "model": "deepseek/deepseek-v4-flash", "variant": "high" },
+        "gamma": { "model": "minimax/MiniMax-M3", "variant": "medium" }
+      },
+      "quick": {
+        "alpha": { "model": "deepseek/deepseek-v4-flash", "variant": "high" },
+        "beta":  { "model": "deepseek/deepseek-v4-flash", "variant": "low" }
+      },
+      "deep": {
+        "alpha": { "model": "deepseek/deepseek-v4-pro", "variant": "max" },
+        "beta":  { "model": "deepseek/deepseek-v4-pro", "variant": "max" },
+        "gamma": { "model": "minimax/MiniMax-M3", "variant": "medium" },
+        "delta": { "model": "codermxtest/gpt-5.5", "variant": "high" }
+      }
+    }
+  }
+}
+```
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `presets` | object | (必填) | 预设字典，每个预设是一组 councillor |
+| `default_preset` | string | `"default"` | 调用时不指定 preset 时使用的预设 |
+| `timeout` | number | `180000` | 单个 councillor 超时（毫秒），默认 3 分钟 |
+| `councillor_execution_mode` | `"parallel"` \| `"serial"` | `"parallel"` | 并行/串行执⾏ |
+| `councillor_retries` | number | `3` | 空响应重试次数 |
+
+- 每个 councillor 的 key（如 `alpha`、`beta`）可任意命名，会出现在输出中
+- `model` 格式为 `"provider/model"`，`variant` 可选 `"max"` / `"high"` / `"medium"` / `"low"`
+- councillor 数量无上限，但建议 2-5 个以平衡成本和质量
+- 调用时可通过 `council_session` 工具的 `preset` 参数切换预设，如 `"quick"` 或 `"deep"`
+
 ## 工作流
 
 ```
