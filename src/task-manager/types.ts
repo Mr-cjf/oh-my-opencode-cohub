@@ -7,6 +7,7 @@ export interface JobRecord {
   agent: string;            // 子代理类型（fixer/explorer/...）
   label: string;            // 任务描述
   status: TaskStatus;
+  background: boolean;      // 是否是后台任务
   terminalReconciled: boolean;
   createdAt: number;        // Date.now()
 }

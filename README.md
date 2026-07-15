@@ -16,15 +16,35 @@ OpenCode 中文智能体编排插件 CoHub——纯调度模式、全中文提�
 - 📜 **AGENTS.md 全覆盖**：项目级和用户级 AGENTS.md 对**本插件所有代理**（内置 8 个 + 插件 4 个）均生效，无需额外配置
 - 📖 **架构借鉴**：插件架构和代理编排理念借鉴了 oh-my-opencode-slim，但完全独立实现、无运行时依赖
 
-## 快速开始
+## 安装
 
-### 安装
+### 前置条件
+
+- [OpenCode](https://opencode.ai) 已安装
+- 推荐安装 [Bun](https://bun.sh)（CLI 一键安装需要）
+
+### 方式一：CLI 一键安装（推荐）
+
+```bash
+bunx oh-my-opencode-cohub install
+```
+
+CLI 会自动完成以下操作：
+
+1. 将 `oh-my-opencode-cohub` 注册到 `~/.config/opencode/opencode.json` 的 `plugin` 数组
+2. 将插件注册到 TUI 配置 `~/.config/opencode/tui.json`
+3. 在 `opencode.json` 的 `agent` 字段中注册全部 12 个 `co-*` 代理
+4. 写入默认配置文件 `~/.config/opencode/oh-my-opencode-cohub.json`
+
+重启 OpenCode 即可生效。
+
+### 方式二：npm 安装 + 手动配置
 
 ```bash
 npm install oh-my-opencode-cohub
 ```
 
-### 配置 opencode.json
+然后在 `~/.config/opencode/opencode.json` 中添加：
 
 ```json
 {
@@ -32,15 +52,53 @@ npm install oh-my-opencode-cohub
 }
 ```
 
-重启 OpenCode 即可。12 个代理自动注册，中文语言要求自动注入。
+重启 OpenCode 即可。
 
-### 使用方式
+### 卸载
 
-安装后，OpenCode 会自动：
-- 加载中文代理提示词
-- 注册 4 个插件代理：@rule-user、@rule-project、@rule-app、@planner
-- 注入中文语言要求
-- 所有代理（包括 @rule-user、@rule-project、@rule-app、@planner）自动继承项目级和用户级 AGENTS.md 规则
+```bash
+bunx oh-my-opencode-cohub uninstall
+```
+
+CLI 会精确清理所有 `co-*` 代理和相关配置，不影响其他插件的配置数据。
+
+如果使用 npm 手动安装，则需手动从 `opencode.json` 的 `plugin` 数组中移除 `"oh-my-opencode-cohub"`，然后 `npm uninstall oh-my-opencode-cohub`。
+
+### 验证安装
+
+安装并重启 OpenCode 后，确认以下效果：
+
+- 对话中自动出现 **中文语言要求**（如 "你必须始终使用中文进行思考、推理和回复"）
+- 可用代理列表中出现 12 个 `co-*` 前缀代理（`co-orchestrator`、`co-oracle`、`co-librarian`、`co-explorer`、`co-designer`、`co-fixer`、`co-observer`、`co-council`、`co-rule-user`、`co-rule-project`、`co-rule-app`、`co-planner`）
+- Orchestrator 自动进入纯调度模式（只做规划、委派、验证，不直接操作文件）
+
+### 从源码安装（本地开发）
+
+如果需要修改源码或使用开发版本：
+
+```bash
+# 1. 克隆项目
+git clone <repo-url> && cd oh-my-opencode-cohub
+
+# 2. 安装依赖
+npm install
+
+# 3. 构建（需要系统已安装 Bun）
+npm run build
+
+# 4. 方式 A：npm link 全局链接（推荐）
+npm link
+bunx oh-my-opencode-cohub install
+# 重启 OpenCode 即可。之后修改源码只需重新 npm run build
+
+# 4. 方式 B：手动配置绝对路径
+# 编辑 ~/.config/opencode/opencode.json，在 plugin 数组中写入项目绝对路径：
+# { "plugin": ["/absolute/path/to/oh-my-opencode-cohub"] }
+# 然后手动运行 CLI 注册代理：
+# node dist/cli/index.js install
+```
+
+> **构建依赖**：`npm run build` 使用 `bun build` 和 `tsc`。系统需安装 [Bun](https://bun.sh)（构建工具）和 Node.js（类型声明生成）。所有 `@opencode-ai/*`、`@opentui/*`、`zod` 均为 external，不打包进 `dist/`。
 
 ## 代理一览
 

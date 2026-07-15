@@ -189,7 +189,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
   const agents = [
     {
       name: 'co-orchestrator',
-      config: { mode: 'primary', model: 'deepseek/deepseek-v4-pro', variant: 'max', prompt: '你是 CoHub 纯调度者。用中文回复。' },
+      config: { mode: 'primary', model: 'deepseek/deepseek-v4-pro', variant: 'max', prompt: ORCHESTRATOR_PROMPT + '\n\n' + CHINESE_LANGUAGE_INSTRUCTION },
     },
     {
       name: 'co-oracle',
@@ -260,18 +260,67 @@ const CoHubPlugin: Plugin = async (input, options) => {
 
   syncAgentConfig();  // 启动时立即写入 agent 配置供 TUI 面板读取
 
+  // ===== 辅助：从 tool output 中提取子任务 session ID =====
+  function extractChildSessionId(output: unknown): string | undefined {
+    if (!output || typeof output !== 'object') return undefined;
+    const o = output as Record<string, unknown>;
+    // metadata 中可能包含 sessionId / taskId
+    const meta = o.metadata as Record<string, unknown> | undefined;
+    if (meta) {
+      if (typeof meta.sessionId === 'string') return meta.sessionId;
+      if (typeof meta.taskId === 'string') return meta.taskId;
+      if (typeof meta.task_id === 'string') return meta.task_id;
+      if (typeof meta.id === 'string') return meta.id;
+    }
+    // 输出文本中可能包含 session ID（如 "Session: abc123"）
+    const text = typeof o.output === 'string' ? o.output : '';
+    const m = text.match(/\b(session|task)[_\s]?(?:id|ID)[:\s]+(\S+)/i);
+    if (m) return m[2];
+    return undefined;
+  }
+
+  // ===== 辅助：从 event 中安全提取 sessionId =====
+  function extractSessionIdFromEvent(props: unknown): string | undefined {
+    if (!props || typeof props !== 'object') return undefined;
+    const p = props as Record<string, unknown>;
+    // 尝试多个可能的路径
+    const info = p.info as Record<string, unknown> | undefined;
+    if (info?.id) return info.id as string;
+    if (typeof p.sessionID === 'string') return p.sessionID;
+    if (typeof p.sessionId === 'string') return p.sessionId;
+    return undefined;
+  }
+
+  // ===== 兜底：定时清理过期背景任务（30 分钟超时） =====
+  const STALE_TIMEOUT_MS = 30 * 60 * 1000;
+  const cleanupTimer = setInterval(() => {
+    try {
+      tracker.cleanupStaleJobs(STALE_TIMEOUT_MS);
+    } catch { /* 静默 */ }
+  }, 30_000);
+
+  // ===== 构建 agent 对象（供直接返回 + config hook 双重注册） =====
+  const agentConfigs: Record<string, unknown> = {};
+  for (const agent of agents) {
+    agentConfigs[agent.name] = {
+      ...agent.config,
+      name: agent.name,
+      description: agent.description,
+    };
+  }
+
   return {
     name: 'oh-my-opencode-cohub',
 
+    // 方式一：直接返回 agent 字段（HTTP 服务器模式更可靠）
+    agent: agentConfigs,
+
+    // 方式二：config hook 再次写入（确保兼容所有模式）
     config: async (cfg: Record<string, unknown>) => {
       const c = cfg as { agent?: Record<string, unknown> };
       c.agent ??= {};
-      for (const agent of agents) {
-        c.agent[agent.name] = {
-          ...agent.config,
-          name: agent.name,
-          description: agent.description,
-        };
+      for (const [name, config] of Object.entries(agentConfigs)) {
+        c.agent[name] = config;
       }
       try { fs.writeFileSync(path.join(STATE_DIR, 'config-hook-ran.json'), JSON.stringify({ ran: true, count: agents.length })); } catch {}
     },
@@ -292,11 +341,30 @@ const CoHubPlugin: Plugin = async (input, options) => {
     },
 
     // 🆕 拦截 task 工具执行后 — 更新任务状态
-    'tool.execute.after': async (input, _output) => {
+    'tool.execute.after': async (input, output) => {
       try {
         if (input.tool === 'task') {
-          tracker.updateAfterTask(input.sessionID, 'completed');
+          // 尝试从 output 中提取子任务 session ID
+          const childSessionId = extractChildSessionId(output);
+          tracker.updateAfterTask(input.sessionID, 'completed', childSessionId);
           syncTrackerState(input.sessionID ?? '');
+        }
+      } catch { /* 静默失败 */ }
+    },
+
+    // 🆕 监听 session 事件 — 背景任务完成时更新状态
+    event: async (input) => {
+      try {
+        const e = input.event as { type: string; properties?: unknown };
+        const sessionId = extractSessionIdFromEvent(e.properties);
+        if (!sessionId) return;
+
+        if (e.type === 'session.idle') {
+          tracker.updateByChildSessionId(sessionId, 'completed');
+          syncTrackerState(tracker.currentParentSessionId);
+        } else if (e.type === 'session.deleted' || e.type === 'session.error') {
+          tracker.updateByChildSessionId(sessionId, 'errored');
+          syncTrackerState(tracker.currentParentSessionId);
         }
       } catch { /* 静默失败 */ }
     },
@@ -306,7 +374,6 @@ const CoHubPlugin: Plugin = async (input, options) => {
       try {
         const board = tracker.getBoardText();
         if (board && output.messages && Array.isArray(output.messages)) {
-          // 在最后一条 user 消息的 text part 末尾追加 board 内容
           for (let i = output.messages.length - 1; i >= 0; i--) {
             const msg = output.messages[i];
             if (msg.info.role === 'user') {
@@ -327,6 +394,10 @@ const CoHubPlugin: Plugin = async (input, options) => {
     'experimental.chat.system.transform': async (_input, output) => {
       // 将中文语言指令注入到系统提示词中
       output.system.push(CHINESE_LANGUAGE_INSTRUCTION);
+    },
+
+    dispose: async () => {
+      clearInterval(cleanupTimer);
     },
   };
 };

@@ -29,11 +29,12 @@ export class TaskTracker {
 
     this.jobs.set(alias, {
       alias,
-      sessionId: '',  // 后续通过 session.created 事件更新
+      sessionId: args.task_id ?? '',  // 背景任务：task_id 即为子 session ID
       parentSessionId,
       agent,
       label,
       status: 'running',
+      background: args.background ?? false,
       terminalReconciled: false,
       createdAt: Date.now(),
     });
@@ -43,7 +44,7 @@ export class TaskTracker {
 
   /**
    * 在 tool.execute.after 中调用，更新任务完成状态
-   * 匹配 parentSessionId 下最近创建且仍为 running 的任务
+   * 非背景任务：立即标 completed；背景任务：不更新（等 session.idle 事件）
    */
   updateAfterTask(parentSessionId: string, status: TaskStatus, sessionId?: string): void {
     this._currentParentSessionId = parentSessionId;
@@ -59,8 +60,26 @@ export class TaskTracker {
       }
     }
     if (latest) {
+      // 背景任务：不标 completed，由 event hook 处理
+      if (latest.background) {
+        if (sessionId) latest.sessionId = sessionId;
+        return;
+      }
       latest.status = status;
       if (sessionId) latest.sessionId = sessionId;
+    }
+  }
+
+  /**
+   * 根据子 session ID 更新任务状态（供 event hook 使用）
+   * 当背景任务的 session 变为 idle 时调用
+   */
+  updateByChildSessionId(sessionId: string, status: TaskStatus): void {
+    for (const job of this.jobs.values()) {
+      if (job.sessionId === sessionId && job.background && job.status === 'running') {
+        job.status = status;
+        return;
+      }
     }
   }
 
@@ -118,6 +137,18 @@ export class TaskTracker {
     const job = this.jobs.get(alias);
     if (job) {
       job.terminalReconciled = true;
+    }
+  }
+
+  /**
+   * 清理超时的背景任务（超过 timeoutMs 仍 running 的标为 errored）
+   */
+  cleanupStaleJobs(timeoutMs: number): void {
+    const now = Date.now();
+    for (const job of this.jobs.values()) {
+      if (job.background && job.status === 'running' && (now - job.createdAt) > timeoutMs) {
+        job.status = 'errored';
+      }
     }
   }
 
