@@ -397,6 +397,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
               const contextId = contextEngine.registerContext({
                 description,
               });
+              output.args ??= {};  // ★ 防御 undefined args
               output.args.description = description +
                 contextEngine.formatMarker(contextId);
               // 异步填充（不阻塞工具启动）
