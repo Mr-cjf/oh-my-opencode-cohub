@@ -22,6 +22,8 @@ npm run build
 | `src/index.ts` | 插件入口：注册 agent、config hook、tool hook、message transform |
 | `src/tui.ts` | TUI 侧边栏面板（依赖 `@opentui/solid`） |
 | `src/prompts/*.ts` | 12 个代理的中文提示词（导出 `const` 字符串，非 .md） |
+| `src/context/` | 上下文共享系统（types / strategy / extractor / formatter / engine） |
+| `src/tools/` | 工具函数（council.ts 多模型共识） |
 | `src/instructions/chinese.ts` | 中文语言要求指令文本 |
 | `src/config/loader.ts` | 读取 `~/.config/opencode/oh-my-opencode-cohub.json` |
 | `src/task-manager/` | Background Job Board 追踪器 |
