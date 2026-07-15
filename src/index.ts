@@ -393,12 +393,17 @@ const CoHubPlugin: Plugin = async (input, options) => {
                 : undefined,
             );
             if (strategy !== 'none') {
+              console.error('[CONTEXT-DEBUG] before hook: strategy=', strategy, 'agent=', subagentType);
+              console.error('[CONTEXT-DEBUG] before hook: output.args type=', typeof output.args, 'isNull=', output.args === null);
               // 修复 C1+C2: 同步注册 + 立即注入标记
               const contextId = contextEngine.registerContext({
                 description,
               });
+              output.args ??= {};  // ★ 防御 undefined args
               output.args.description = description +
                 contextEngine.formatMarker(contextId);
+              console.error('[CONTEXT-DEBUG] before hook: marker appended, contextId=', contextId);
+              console.error('[CONTEXT-DEBUG] before hook: description preview=', (output.args.description as string).slice(-80));
               // 异步填充（不阻塞工具启动）
               contextEngine.fillContextAsync(contextId, input.sessionID, {
                 strategy,
@@ -449,13 +454,19 @@ const CoHubPlugin: Plugin = async (input, options) => {
       try {
         // 新增：扫描并替换上下文标记（在所有 user 消息中）
         if (output.messages && Array.isArray(output.messages)) {
+          const userMsgs = output.messages.filter((m: any) => m.info?.role === 'user');
+          console.error('[CONTEXT-DEBUG] transform: total messages=', output.messages.length, 'user messages=', userMsgs.length);
           for (const msg of output.messages) {
             if (msg.info.role !== 'user') continue;
             for (const part of msg.parts ?? []) {
               if (part.type !== 'text' || !part.text) continue;
+              const hasMarker = /CONTEXT:ID=/.test(part.text);
+              if (hasMarker) {
+                console.error('[CONTEXT-DEBUG] transform: FOUND marker in user msg, text preview=', part.text.slice(0, 200));
+              }
               const replaced = contextEngine.consumeMarkedContext(part.text);
               if (replaced !== null) {
-                part.text = replaced;
+                console.error('[CONTEXT-DEBUG] transform: marker REPLACED, new text preview=', part.text.slice(0, 200));
               }
             }
           }
