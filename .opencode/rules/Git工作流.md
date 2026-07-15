@@ -10,7 +10,7 @@
 - [ ] 提交信息格式：`<type>: <描述>`（feat/fix/refactor/docs/test/chore/ci/perf）
 - [ ] PR 前用 `git diff main...HEAD` 审查全量差异（不只是最后一次提交）
 - [ ] 同一功能的代码变更必须在同一 PR 中（禁止拆分为多个 PR 规避审查）
-- [ ] PR 合并前 CI 必须通过（`test-compile` 不允许跳过）
+- [ ] PR 合并前 CI 必须通过（`npm run build` 不允许跳过）
 - [ ] 禁止 force push 到 `main`/`master` 分支
 
 ---
@@ -43,14 +43,14 @@
    # 审查从 main 分叉以来的所有变更
    git diff main...HEAD
    
-   # 确认 CI 通过
-   mvn -pl <changed-modules> -am test-compile
+    # 确认 CI 通过
+    npm run build
    ```
 
 2. **PR 描述**：说明变更原因（Why）而非罗列变更内容（What）
 
 3. **合并前**：
-   - [ ] CI 全部通过（不允许跳过 test-compile）
+   - [ ] CI 全部通过（不允许跳过 `npm run build`）
    - [ ] 至少一人 Code Review 通过
    - [ ] 无 unresolved 的 CR 意见
 
