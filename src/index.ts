@@ -14,6 +14,9 @@ import { RULE_APP_PROMPT } from './prompts/rule-app';
 import { PLANNER_PROMPT } from './prompts/planner';
 import { CHINESE_LANGUAGE_INSTRUCTION } from './instructions/chinese';
 import { TaskTracker } from './task-manager/tracker';
+import { ContextEngine } from './context/engine';
+import { resolveStrategy } from './context/strategy';
+import type { ContextStrategy } from './context/types';
 import { loadCoHubConfig, type AgentOverride } from './config/loader';
 import { createCouncilTool, CouncilManager } from './tools/council';
 import * as fs from 'node:fs';
@@ -279,6 +282,10 @@ const CoHubPlugin: Plugin = async (input, options) => {
       },
     },
   };
+  // 初始化上下文引擎
+  const contextConfig = userConfig.context ?? {};
+  const contextEngine = new ContextEngine(input.client, contextConfig);
+
   const councilConfig = userConfig.council ?? DEFAULT_COUNCIL_CONFIG;
   const councilManager = new CouncilManager(input.client, input.directory, councilConfig);
   const councilTools = createCouncilTool(input, councilManager);
@@ -324,6 +331,10 @@ const CoHubPlugin: Plugin = async (input, options) => {
     } catch { /* 静默 */ }
   }, 30_000);
 
+  const contextCleanupTimer = setInterval(() => {
+    try { contextEngine.cleanupStaleDependencies(); } catch {}
+  }, 60_000);
+
   // ===== 构建 agent 对象（供直接返回 + config hook 双重注册） =====
   const agentConfigs: Record<string, unknown> = {};
   for (const agent of agents) {
@@ -357,15 +368,45 @@ const CoHubPlugin: Plugin = async (input, options) => {
       try {
         if (input.tool === 'task') {
           const args = output.args ?? {};
+          const subagentType = typeof args.subagent_type === 'string' ? args.subagent_type : undefined;
+          const description = typeof args.description === 'string' ? args.description : '';
+
+          // 现有：注册任务
           tracker.registerBeforeTask(input.sessionID, {
-            description: typeof args.description === 'string' ? args.description : undefined,
-            subagent_type: typeof args.subagent_type === 'string' ? args.subagent_type : undefined,
+            description,
+            subagent_type: subagentType,
             task_id: typeof args.task_id === 'string' ? args.task_id : undefined,
             background: typeof args.background === 'boolean' ? args.background : undefined,
           });
           syncTrackerState(input.sessionID ?? '');
+
+          // 新增：构建上下文
+          if (subagentType) {
+            // 修复 C3: 使用 engine 的合并策略
+            const strategy = resolveStrategy(
+              subagentType,
+              contextEngine.getStrategy(subagentType) !== undefined
+                ? { [subagentType]: contextEngine.getStrategy(subagentType) }
+                : contextConfig.strategy ?? {},
+              typeof args.context_override === 'string'
+                ? (args.context_override as ContextStrategy)
+                : undefined,
+            );
+            if (strategy !== 'none') {
+              // 修复 C1+C2: 同步注册 + 立即注入标记
+              const contextId = contextEngine.registerContext({
+                description,
+              });
+              output.args.description = description +
+                contextEngine.formatMarker(contextId);
+              // 异步填充（不阻塞工具启动）
+              contextEngine.fillContextAsync(contextId, input.sessionID, {
+                strategy,
+              }).catch(() => {});  // 修复 I1: 显式 catch
+            }
+          }
         }
-      } catch { /* 静默失败，不影响正常功能 */ }
+      } catch { /* 静默失败 */ }
     },
 
     // 🆕 拦截 task 工具执行后 — 更新任务状态
@@ -390,6 +431,12 @@ const CoHubPlugin: Plugin = async (input, options) => {
         if (e.type === 'session.idle') {
           tracker.updateByChildSessionId(sessionId, 'completed');
           syncTrackerState(tracker.currentParentSessionId);
+
+          // 新增：捕获子代理结果用于依赖传播
+          const job = tracker.getJobBySessionId(sessionId);
+          if (job) {
+            void contextEngine.captureResult(sessionId, job.alias, job.agent);
+          }
         } else if (e.type === 'session.deleted' || e.type === 'session.error') {
           tracker.updateByChildSessionId(sessionId, 'errored');
           syncTrackerState(tracker.currentParentSessionId);
@@ -397,9 +444,24 @@ const CoHubPlugin: Plugin = async (input, options) => {
       } catch { /* 静默失败 */ }
     },
 
-    // 🆕 注入 Background Job Board 到最后一条 user 消息中
+    // 🆕 扫描上下文标记 + 注入 Background Job Board
     'experimental.chat.messages.transform': async (_input, output) => {
       try {
+        // 新增：扫描并替换上下文标记（在所有 user 消息中）
+        if (output.messages && Array.isArray(output.messages)) {
+          for (const msg of output.messages) {
+            if (msg.info.role !== 'user') continue;
+            for (const part of msg.parts ?? []) {
+              if (part.type !== 'text' || !part.text) continue;
+              const replaced = contextEngine.consumeMarkedContext(part.text);
+              if (replaced !== null) {
+                part.text = replaced;
+              }
+            }
+          }
+        }
+
+        // 现有：注入 Background Job Board（到最后一条 user 消息）
         const board = tracker.getBoardText();
         if (board && output.messages && Array.isArray(output.messages)) {
           for (let i = output.messages.length - 1; i >= 0; i--) {
@@ -426,6 +488,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
 
     dispose: async () => {
       clearInterval(cleanupTimer);
+      clearInterval(contextCleanupTimer);
     },
   };
 };

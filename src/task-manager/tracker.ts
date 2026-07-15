@@ -181,4 +181,14 @@ export class TaskTracker {
     }
     return count;
   }
+
+  /** 根据子 session ID 查找 JobRecord */
+  getJobBySessionId(sessionId: string): { alias: string; agent: string } | undefined {
+    for (const job of this.jobs.values()) {
+      if (job.sessionId === sessionId) {
+        return { alias: job.alias, agent: job.agent };
+      }
+    }
+    return undefined;
+  }
 }

@@ -1,6 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import type { ContextConfig } from '../context/types';
+import { DEFAULT_CONTEXT_CONFIG } from '../context/types';
 
 /** 单个 councillor 配置 */
 export interface CouncillorConfig {
@@ -31,6 +33,7 @@ export interface AgentOverride {
 export interface CoHubConfig {
   agents?: Record<string, AgentOverride>;
   council?: CouncilConfig;
+  context?: Partial<ContextConfig>;  // 用户可覆盖部分字段
 }
 
 /** 配置文件路径 */
@@ -64,3 +67,5 @@ export const DEFAULT_CONFIG: CoHubConfig = {
     'co-planner': { model: 'deepseek/deepseek-v4-pro', variant: 'high' },
   },
 };
+
+export { DEFAULT_CONTEXT_CONFIG };
