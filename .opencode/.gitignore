@@ -1,7 +1,11 @@
 *
 !opencode.json
 !.gitignore
+!package.json
+!package-lock.json
 !rules/
 !rules/**
 !skills/
 !skills/**
+!images/
+!images/**

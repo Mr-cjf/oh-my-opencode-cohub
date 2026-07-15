@@ -1,6 +1,6 @@
 ---
 name: "Git提交"
-description: "为后端Java微服务项目创建详细、结构化的git提交信息。自动分析当前分支从新建点开始的所有提交，生成变更影响汇总表格，检查问题延续性。当用户说'提交''commit''git commit''提交代码'时触发。**禁止在master/test/dev分支使用。**"
+description: "为项目创建详细、结构化的git提交信息。自动分析当前分支从新建点开始的所有提交，生成变更影响汇总表格，检查问题延续性。当用户说'提交''commit''git commit''提交代码'时触发。**禁止在master/test/dev分支使用。**"
 tags: ["git", "commit", "conventional-commits", "branch-analysis", "impact-table"]
 context: fork
 ---

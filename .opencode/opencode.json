@@ -1,16 +1,9 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "instructions": [
-    ".opencode/rules/安全底线.md",
-    ".opencode/rules/Java编码.md",
     ".opencode/rules/Git工作流.md",
-    ".opencode/rules/测试.md",
-    ".opencode/rules/代码变更防漏.md",
     ".opencode/rules/上下文效率.md",
-    ".opencode/rules/数据库.md",
-    ".opencode/rules/接口开发.md",
-    ".opencode/rules/链路追踪.md",
-    ".opencode/rules/模型供应商.md"
+    ".opencode/rules/发版规范.md"
   ],
   "skills": {
     "paths": [".opencode/skills"]
@@ -18,7 +11,8 @@
   "permission": {
     "edit": "allow",
     "bash": {
-      "mvn *": "allow",
+      "bun *": "allow",
+      "tsc *": "allow",
       "git diff *": "allow",
       "git log *": "allow",
       "git status *": "allow",
@@ -37,13 +31,6 @@
       "node *": "allow",
       "npm *": "allow",
       "npx *": "allow",
-      "java *": "allow",
-      "python *": "allow",
-      "python3 *": "allow",
-      "Select-String *": "allow",
-      "Select-Object *": "allow",
-      "Get-ChildItem *": "allow",
-      "Get-Content *": "allow",
       "New-Item *": "allow",
       "Test-Path *": "allow",
       "Remove-Item *": "ask",
@@ -52,8 +39,6 @@
     "webfetch": "allow",
     "websearch": "allow",
     "external_directory": {
-      "C:/Users/14023/AppData/Local/Temp/**": "allow",
-      "C:/Users/14023/.jdks/**": "allow",
       "*": "ask"
     }
   }
