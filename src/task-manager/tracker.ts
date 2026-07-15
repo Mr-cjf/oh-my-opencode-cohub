@@ -5,6 +5,8 @@ export class TaskTracker {
   private counters = new Map<string, number>();
   /** 最近一次 tool hook 收到的 parentSessionId */
   private _currentParentSessionId = '';
+  /** 已 reconcile 的父 session ID，避免同一轮重复 reconcile */
+  private _reconciledForParent = '';
 
   get currentParentSessionId(): string {
     return this._currentParentSessionId;
@@ -23,6 +25,15 @@ export class TaskTracker {
    */
   registerBeforeTask(parentSessionId: string, args: TaskArgs): string {
     this._currentParentSessionId = parentSessionId;
+    // 每轮自动 reconcile 旧任务（只执行一次）
+    if (this._reconciledForParent !== parentSessionId) {
+      this._reconciledForParent = parentSessionId;
+      for (const job of this.jobs.values()) {
+        if (job.parentSessionId === parentSessionId && job.status !== 'running') {
+          job.terminalReconciled = true;
+        }
+      }
+    }
     const agent = args.subagent_type ?? 'unknown';
     const alias = this.alias(agent);
     const label = typeof args.description === 'string' ? args.description : alias;
@@ -190,5 +201,19 @@ export class TaskTracker {
       }
     }
     return undefined;
+  }
+
+  /** cancel_task 集成：根据别名或 sessionId 标记任务为已取消并 reconcile */
+  markCancelled(taskId: string): void {
+    let job = this.jobs.get(taskId);
+    if (!job) {
+      for (const j of this.jobs.values()) {
+        if (j.sessionId === taskId) { job = j; break; }
+      }
+    }
+    if (job) {
+      job.status = 'cancelled';
+      job.terminalReconciled = true;
+    }
   }
 }
