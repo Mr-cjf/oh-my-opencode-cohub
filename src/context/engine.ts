@@ -3,7 +3,7 @@
 import type { ContextStrategy, TaskContext, ContextConfig, DependencyResult } from './types';
 import { DEFAULT_CONTEXT_CONFIG } from './types';
 import { extractRelevantFiles, extractDecisions, extractErrors } from './extractor';
-import { formatContextMarker, replaceMarkerWithContext } from './formatter';
+import { formatContextMarker, replaceMarkerWithContext, CONTEXT_MARKER_PATTERN } from './formatter';
 import type { createOpencodeClient } from '@opencode-ai/sdk';
 
 type SdkClient = ReturnType<typeof createOpencodeClient>;
@@ -18,34 +18,42 @@ export class ContextEngine {
 
   constructor(client: SdkClient, config?: Partial<ContextConfig>) {
     this.client = client;
-    this.config = { ...DEFAULT_CONTEXT_CONFIG, ...config };
+    // 修复 I2: 深度合并 strategy
+    this.config = {
+      ...DEFAULT_CONTEXT_CONFIG,
+      ...config,
+      strategy: { ...DEFAULT_CONTEXT_CONFIG.strategy, ...config?.strategy },
+    };
   }
 
   /**
-   * Phase A: 构建上下文。
-   * 从父 session 提取信息 → 构造 TaskContext → 存入 registry → 返回 contextId。
+   * 同步注册上下文占位并返回 contextId。
+   * 标记可立即注入到 output.args.description。
    */
-  async constructContext(
-    parentSessionId: string,
-    args: {
-      description: string;
-      subagent_type: string;
-      strategy: ContextStrategy;
-    },
-  ): Promise<string> {
+  registerContext(args: { description: string }): string {
     const contextId = crypto.randomUUID();
-    const context: TaskContext = {
+    this.registry.set(contextId, {
       goal: args.description,
       relevantFiles: [],
       decisions: [],
       errors: [],
       dependencies: [],
-    };
+    });
+    return contextId;
+  }
 
-    if (args.strategy === 'none') {
-      this.registry.set(contextId, context);
-      return contextId;
-    }
+  /**
+   * 异步填充已注册的上下文（不阻塞工具启动）。
+   */
+  async fillContextAsync(
+    contextId: string,
+    parentSessionId: string,
+    args: { strategy: ContextStrategy },
+  ): Promise<void> {
+    const context = this.registry.get(contextId);
+    if (!context) return;
+
+    if (args.strategy === 'none') return;
 
     try {
       const windowSize = this.config.relevantMessageWindow;
@@ -64,17 +72,13 @@ export class ContextEngine {
         context.errors = extractErrors(messages, this.config.maxErrors, windowSize);
       }
 
-      // 注入前置依赖结果
       if (this.config.dependencyPropagation && this.dependencyCache.size > 0) {
         context.dependencies = Array.from(this.dependencyCache.values())
           .slice(-this.config.maxDependencies);
       }
     } catch {
-      // SDK 调用失败时返回最小上下文
+      // SDK 调用失败时保留最小上下文
     }
-
-    this.registry.set(contextId, context);
-    return contextId;
   }
 
   /**
@@ -83,14 +87,14 @@ export class ContextEngine {
    * 返回替换后的完整文本，或 null（无标记或未找到上下文）。
    */
   consumeMarkedContext(messageText: string): string | null {
-    const markerMatch = messageText.match(/<!-- CONTEXT:ID=([a-f0-9-]+) -->/);
+    const markerMatch = messageText.match(CONTEXT_MARKER_PATTERN);
     if (!markerMatch) return null;
 
     const contextId = markerMatch[1];
     const context = this.registry.get(contextId);
     if (!context) {
       // 上下文已过期或被清理，移除标记
-      return messageText.replace(/<!-- CONTEXT:ID=[a-f0-9-]+ -->/, '');
+      return messageText.replace(CONTEXT_MARKER_PATTERN, '');
     }
 
     const result = replaceMarkerWithContext(messageText, context);
@@ -151,6 +155,13 @@ export class ContextEngine {
    */
   formatMarker(contextId: string): string {
     return formatContextMarker(contextId);
+  }
+
+  /**
+   * 暴露合并后的 strategy 供 index.ts 使用
+   */
+  getStrategy(agentType: string): ContextStrategy {
+    return this.config.strategy[agentType] ?? 'none';
   }
 
   /**

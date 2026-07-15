@@ -331,10 +331,8 @@ const CoHubPlugin: Plugin = async (input, options) => {
     } catch { /* 静默 */ }
   }, 30_000);
 
-  setInterval(() => {
-    try {
-      contextEngine.cleanupStaleDependencies();
-    } catch { /* 静默 */ }
+  const contextCleanupTimer = setInterval(() => {
+    try { contextEngine.cleanupStaleDependencies(); } catch {}
   }, 60_000);
 
   // ===== 构建 agent 对象（供直接返回 + config hook 双重注册） =====
@@ -384,23 +382,27 @@ const CoHubPlugin: Plugin = async (input, options) => {
 
           // 新增：构建上下文
           if (subagentType) {
+            // 修复 C3: 使用 engine 的合并策略
             const strategy = resolveStrategy(
               subagentType,
-              contextConfig.strategy ?? {},
+              contextEngine.getStrategy(subagentType) !== undefined
+                ? { [subagentType]: contextEngine.getStrategy(subagentType) }
+                : contextConfig.strategy ?? {},
               typeof args.context_override === 'string'
                 ? (args.context_override as ContextStrategy)
                 : undefined,
             );
             if (strategy !== 'none') {
-              contextEngine.constructContext(input.sessionID, {
+              // 修复 C1+C2: 同步注册 + 立即注入标记
+              const contextId = contextEngine.registerContext({
                 description,
-                subagent_type: subagentType,
-                strategy,
-              }).then(contextId => {
-                // 在 description 末尾追加标记
-                output.args.description = description +
-                  contextEngine.formatMarker(contextId);
               });
+              output.args.description = description +
+                contextEngine.formatMarker(contextId);
+              // 异步填充（不阻塞工具启动）
+              contextEngine.fillContextAsync(contextId, input.sessionID, {
+                strategy,
+              }).catch(() => {});  // 修复 I1: 显式 catch
             }
           }
         }
@@ -433,7 +435,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
           // 新增：捕获子代理结果用于依赖传播
           const job = tracker.getJobBySessionId(sessionId);
           if (job) {
-            contextEngine.captureResult(sessionId, job.alias, job.agent);
+            void contextEngine.captureResult(sessionId, job.alias, job.agent);
           }
         } else if (e.type === 'session.deleted' || e.type === 'session.error') {
           tracker.updateByChildSessionId(sessionId, 'errored');
@@ -486,6 +488,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
 
     dispose: async () => {
       clearInterval(cleanupTimer);
+      clearInterval(contextCleanupTimer);
     },
   };
 };
