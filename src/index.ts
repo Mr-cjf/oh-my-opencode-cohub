@@ -412,6 +412,13 @@ const CoHubPlugin: Plugin = async (input, options) => {
     // 🆕 拦截 task 工具执行后 — 更新任务状态
     'tool.execute.after': async (input, output) => {
       try {
+        // cancel_task 集成：标记任务已取消
+        if (input.tool === 'cancel_task') {
+          const args = input.args as Record<string, unknown> | undefined;
+          const taskId = args?.task_id;
+          if (typeof taskId === 'string') tracker.markCancelled(taskId);
+          syncTrackerState(input.sessionID ?? '');
+        }
         if (input.tool === 'task') {
           // 尝试从 output 中提取子任务 session ID
           const childSessionId = extractChildSessionId(output);
