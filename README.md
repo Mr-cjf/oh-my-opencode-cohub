@@ -2,13 +2,15 @@
 
 OpenCode 中文智能体编排插件 CoHub——纯调度模式、全中文提示词、规范分析代理、方案制定代理。
 
+[![GitHub](https://img.shields.io/badge/GitHub-Mr--cjf%2Foh--my--opencode--cohub-blue?logo=github)](https://github.com/Mr-cjf/oh-my-opencode-cohub)
+
 ## 特性
 
 - 🚀 **独立运行**：纯 OpenCode Plugin，依赖 `@opencode-ai/plugin` SDK，零外部插件依赖
 - 🤖 **12 个内置代理**：8 个通用代理（orchestrator/oracle/librarian/explorer/designer/fixer/observer/council）+ 4 个规范/方案代理（rule-user/rule-project/rule-app/planner）
 - 🪝 **自动注入**：通过 `system.transform` 钩子在每次 LLM 调用时注入中文语言要求
 - 🧠 **纯调度 Orchestrator**：不碰任何文件工具，只负责规划、委派、验证
-- 🇨🇳 **全中文提示词**：8 个内置代理 + 4 个插件代理全中文
+- 🇨🇳 **全中文提示词**：12 个代理全部使用中文提示词
 - 📋 **规范分析代理**：rule-user（用户AGENTS.md）、rule-project（项目AGENTS.md）、rule-app（.opencode/rules/）
 - 🎯 **方案制定代理**：planner 综合所有输入输出结构化任务分解
 - 🔗 **OpenSpec + Superpowers 死板路由**：收到需求即触发，不判断"大小"
@@ -78,7 +80,7 @@ CLI 会精确清理所有 `co-*` 代理和相关配置，不影响其他插件�
 
 ```bash
 # 1. 克隆项目
-git clone <repo-url> && cd oh-my-opencode-cohub
+git clone https://github.com/Mr-cjf/oh-my-opencode-cohub.git && cd oh-my-opencode-cohub
 
 # 2. 安装依赖
 npm install
@@ -104,43 +106,74 @@ bunx oh-my-opencode-cohub install
 
 ### 代理（12 个，全中文提示词）
 
-| 代理 | 模型 | 职责 | 读取源 |
-|------|------|------|--------|
-| orchestrator | 见默认配置 | 纯调度：规划→委派→验证 | — |
-| oracle | 见默认配置 | 架构审查/代码审查（含 Superpowers skills） | — |
-| librarian | 见默认配置 | 外部文档/API 研究 | — |
-| explorer | 见默认配置 | 代码库搜索定位 | — |
-| designer | 见默认配置 | UI/UX 设计与实现 | — |
-| fixer | 见默认配置 | 代码修改执行（含 TDD skill） | — |
-| observer | 见默认配置 | 图片/PDF 分析 | — |
-| council | 见默认配置 | 多模型共识 | — |
-| rule-user | 见默认配置 | 用户级规范分析 | `~/.config/opencode/AGENTS.md` |
-| rule-project | 见默认配置 | 项目级规范分析 | 项目 `AGENTS.md` |
-| rule-app | 见默认配置 | 应用规则分析 | `.opencode/rules/*.md` |
-| planner | 见默认配置 | 方案制定 | 综合需求+信息+规则 |
+| 代理 | 默认模型 | 职责 | 读取源 |
+|------|----------|------|--------|
+| co-orchestrator | `deepseek/deepseek-v4-pro` | 纯调度：规划→委派→验证 | — |
+| co-oracle | `deepseek/deepseek-v4-pro` | 架构审查/代码审查（含 Superpowers skills） | — |
+| co-librarian | `deepseek/deepseek-v4-flash` | 外部文档/API 研究 | — |
+| co-explorer | `deepseek/deepseek-v4-flash` | 代码库搜索定位 | — |
+| co-designer | `minimax/MiniMax-M3` | UI/UX 设计与实现 | — |
+| co-fixer | `deepseek/deepseek-v4-flash` | 代码修改执行（含 TDD skill） | — |
+| co-observer | `codermxtest/gpt-5.5` | 图片/PDF 分析 | — |
+| co-council | `deepseek/deepseek-v4-pro` | 多模型共识 | — |
+| co-rule-user | `deepseek/deepseek-v4-flash` | 用户级规范分析 | `~/.config/opencode/AGENTS.md` |
+| co-rule-project | `deepseek/deepseek-v4-flash` | 项目级规范分析 | 项目 `AGENTS.md` |
+| co-rule-app | `deepseek/deepseek-v4-flash` | 应用规则分析 | `.opencode/rules/*.md` |
+| co-planner | `deepseek/deepseek-v4-pro` | 方案制定 | 综合需求+信息+规则 |
 
-> 模型通过 `DEFAULT_MODELS` 常量配置，默认使用 DeepSeek，可通过 plugin config 覆盖任意代理模型。
+> 模型可通过下文「配置文件」或「自定义模型」章节覆盖。
+
+## 配置文件
+
+CLI 安装后自动创建 `~/.config/opencode/oh-my-opencode-cohub.json`，这是 CoHub 的专用配置文件，结构如下：
+
+```json
+{
+  "$schema": "https://unpkg.com/oh-my-opencode-cohub@latest/oh-my-opencode-cohub.schema.json",
+  "agents": {
+    "co-orchestrator": { "model": "deepseek/deepseek-v4-pro", "variant": "max" },
+    "co-oracle":      { "model": "deepseek/deepseek-v4-pro", "variant": "max" },
+    "co-librarian":   { "model": "deepseek/deepseek-v4-flash", "variant": "low" },
+    "co-explorer":    { "model": "deepseek/deepseek-v4-flash", "variant": "low" },
+    "co-designer":    { "model": "minimax/MiniMax-M3", "variant": "medium" },
+    "co-fixer":       { "model": "deepseek/deepseek-v4-flash", "variant": "high" },
+    "co-observer":    { "model": "codermxtest/gpt-5.5", "variant": "low" },
+    "co-council":     { "model": "deepseek/deepseek-v4-pro", "variant": "high" },
+    "co-rule-user":   { "model": "deepseek/deepseek-v4-flash", "variant": "medium" },
+    "co-rule-project":{ "model": "deepseek/deepseek-v4-flash", "variant": "medium" },
+    "co-rule-app":    { "model": "deepseek/deepseek-v4-flash", "variant": "medium" },
+    "co-planner":     { "model": "deepseek/deepseek-v4-pro", "variant": "high" }
+  }
+}
+```
+
+直接编辑此文件即可修改任意代理的模型和变体。`$schema` 提供 IDE 自动补全支持。
+
+> **注意**：同一目录 `~/.config/opencode/oh-my-opencode-cohub/` 下也可放置 `{agent}.md` 提示词覆盖文件（见「自定义提示词」章节），与 JSON 配置文件共存。
 
 ## 工作流
 
 ```
 1. 理解需求
-2. 信息收集（@explorer / @librarian / @observer）
-3. 规范分析（并行 @rule-user / @rule-project / @rule-app）
-4. 制定方案 → @planner
-5. 调度执行（@fixer / @designer 等）
-6. 验证（@oracle / @designer）
+2. 信息收集（@co-explorer / @co-librarian / @co-observer）
+3. 规范分析（并行 @co-rule-user / @co-rule-project / @co-rule-app）
+4. 制定方案 → @co-planner
+5. 调度执行（@co-fixer / @co-designer 等）
+6. 验证（@co-oracle / @co-designer）
 ```
 
 ## 依赖
 
-- OpenCode
-- `@opencode-ai/plugin`（TypeScript 编译依赖）
+- [OpenCode](https://opencode.ai) ≥ 1.17
+- `@opencode-ai/plugin@^1.17`（运行时依赖）
+- `@opencode-ai/sdk@^1.3`（运行时依赖）
 - 无其他外部插件依赖
 
 ## 自定义模型
 
-通过 `opencode.json` 的 plugin config 覆盖默认模型：
+**推荐**：直接编辑 `~/.config/opencode/oh-my-opencode-cohub.json`（见「配置文件」章节），修改对应代理的 `model` 和 `variant` 即可。
+
+**备选**：通过 `opencode.json` 的 plugin config 覆盖：
 
 ```json
 {
@@ -157,6 +190,8 @@ bunx oh-my-opencode-cohub install
   ]
 }
 ```
+
+> 注意：plugin config 中的 key 使用无 `co-` 前缀的短名（如 `orchestrator`）；JSON 配置文件使用完整的 `co-` 前缀名（如 `co-orchestrator`）。
 
 ## 自定义提示词
 
