@@ -1,0 +1,40 @@
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: 校验 tag 版本与 package.json 版本一致
+        run: |
+          TAG_VERSION=$(echo "${{ github.ref }}" | sed 's/refs\/tags\/v//')
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "❌ Tag 版本 ($TAG_VERSION) 与 package.json 版本 ($PKG_VERSION) 不一致"
+            exit 1
+          fi
+          echo "✅ 版本一致: v$TAG_VERSION"
+
+      - run: npm ci
+
+      - run: npm publish --provenance --access public
