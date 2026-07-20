@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## [1.3.0] - 2026-07-20
+
+### 新增
+- 提示词源文件迁移为 Markdown 格式（`src/prompts/*.md`），直接编辑更直观
+- 新增 `scripts/generate-prompts.ts`，构建时自动将 .md 转换为 .ts 常量文件
+- 用户自定义 .md 覆盖机制现已生效，支持项目级和用户级覆盖
+
+### 修复
+- 修复 co-oracle / co-librarian / co-explorer / co-designer / co-fixer / co-observer / co-planner / co-rule-user / co-rule-project / co-rule-app 共 10 个代理使用占位符而非完整提示词的问题
+- 修复 `loadFileOverrides()` 死代码，运行时 .md 文件覆盖逻辑现在正确应用
+
+### 变更
+- `src/prompts/*.ts` 转为构建时自动生成，不再手动维护
+- `package.json` build 脚本前置增加 `bun run scripts/generate-prompts.ts` 步骤
+- `.gitignore` 新增 `src/prompts/*.ts` 忽略规则
+
 ## [1.2.4] - 2026-07-20
 
 ### 新增
