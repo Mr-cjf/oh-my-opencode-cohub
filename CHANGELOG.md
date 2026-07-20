@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## [1.2.4] - 2026-07-20
+
+### 新增
+- 子代理上下文共享系统：ContextEngine 三阶段流程（构造→注入→捕获），子代理启动时自动获取结构化上下文
+- `src/context/` 模块：types / strategy / extractor / formatter / engine，5 个新文件
+- 上下文策略：`none` / `relevant` / `summary` / `full`，静态默认 + 运行时 `context_override` 覆盖
+- 子代理结果依赖传播：co-explorer 发现自动注入到后续 co-fixer 的上下文
+- TaskTracker 自动 reconcile：新一轮任务启动时自动归档旧任务，Board 不再累积
+- cancel_task 集成：取消任务立即标记为 cancelled 并从 Board 移除
+- server 别名导出：兼容 OpenCode `PluginModule` 类型
+- `getJobBySessionId()`：按子 session ID 查找 JobRecord
+
+### 修复
+- 防御 `output.args` 为 undefined 导致上下文标记注入 TypeError 被静默吞掉
+- `contextConfig` 深合并 strategy 字段，避免用户部分覆盖时丢失默认策略
+- `captureResult` 添加 `void` 前缀，消除潜在 unhandled Promise rejection
+- `contextCleanupTimer` 在 dispose 中清理
+- `CONTEXT_MARKER_PATTERN` 导入替代内联正则，消除重复定义
+
+### 变更
+- `JobRecord` 新增 `contextStrategy`、`dependencies` 可选字段
+- `AGENTS.md` 补充 `src/context/`、`src/tools/` 目录说明
+- 版本号 `1.2.0` → `1.2.4`
+
 ## [1.2.3] - 2026-07-20
 
 ### 新增
