@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## [1.2.3] - 2026-07-20
+
+### 新增
+- GitHub Actions CI：推送 `v*` tag 自动构建并发布到 npm（OIDC 认证，零 token 管理）
+- 版本一致性校验：CI 自动对比 tag 版本与 package.json 版本
+
+### 变更
+- 发版规范更新：使用 `npm version` + `git push --follow-tags` 简化发布流程
+
 ## [1.0.18] - 2026-07-15
 
 ### 新增
