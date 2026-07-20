@@ -511,4 +511,5 @@ const CoHubPlugin: Plugin = async (input, options) => {
   };
 };
 
+export const server = CoHubPlugin;
 export default CoHubPlugin;

@@ -1541,6 +1541,8 @@ var CoHubPlugin = async (input, options) => {
     };
   }
   return {
+    name: "oh-my-opencode-cohub",
+    agent: agentConfigs,
     tool: councilTools,
     config: async (cfg) => {
       const c = cfg;
@@ -1548,6 +1550,9 @@ var CoHubPlugin = async (input, options) => {
       for (const [name, config] of Object.entries(agentConfigs)) {
         c.agent[name] = config;
       }
+      try {
+        fs2.writeFileSync(path2.join(STATE_DIR, "config-hook-ran.json"), JSON.stringify({ ran: true, count: agents.length }));
+      } catch {}
     },
     "tool.execute.before": async (input2, output) => {
       try {
@@ -1565,11 +1570,15 @@ var CoHubPlugin = async (input, options) => {
           if (subagentType) {
             const strategy = resolveStrategy(subagentType, contextEngine.getStrategy(subagentType) !== undefined ? { [subagentType]: contextEngine.getStrategy(subagentType) } : contextConfig.strategy ?? {}, typeof args.context_override === "string" ? args.context_override : undefined);
             if (strategy !== "none") {
+              console.error("[CONTEXT-DEBUG] before hook: strategy=", strategy, "agent=", subagentType);
+              console.error("[CONTEXT-DEBUG] before hook: output.args type=", typeof output.args, "isNull=", output.args === null);
               const contextId = contextEngine.registerContext({
                 description
               });
               output.args ??= {};
               output.args.description = description + contextEngine.formatMarker(contextId);
+              console.error("[CONTEXT-DEBUG] before hook: marker appended, contextId=", contextId);
+              console.error("[CONTEXT-DEBUG] before hook: description preview=", output.args.description.slice(-80));
               contextEngine.fillContextAsync(contextId, input2.sessionID, {
                 strategy
               }).catch(() => {});
@@ -1616,13 +1625,22 @@ var CoHubPlugin = async (input, options) => {
     "experimental.chat.messages.transform": async (_input, output) => {
       try {
         if (output.messages && Array.isArray(output.messages)) {
+          const userMsgs = output.messages.filter((m) => m.info?.role === "user");
+          console.error("[CONTEXT-DEBUG] transform: total messages=", output.messages.length, "user messages=", userMsgs.length);
           for (const msg of output.messages) {
             if (msg.info.role !== "user")
               continue;
             for (const part of msg.parts ?? []) {
               if (part.type !== "text" || !part.text)
                 continue;
-              contextEngine.consumeMarkedContext(part.text);
+              const hasMarker = /CONTEXT:ID=/.test(part.text);
+              if (hasMarker) {
+                console.error("[CONTEXT-DEBUG] transform: FOUND marker in user msg, text preview=", part.text.slice(0, 200));
+              }
+              const replaced = contextEngine.consumeMarkedContext(part.text);
+              if (replaced !== null) {
+                console.error("[CONTEXT-DEBUG] transform: marker REPLACED, new text preview=", part.text.slice(0, 200));
+              }
             }
           }
         }
@@ -1655,8 +1673,11 @@ var CoHubPlugin = async (input, options) => {
     }
   };
 };
+var server = CoHubPlugin;
+var src_default = CoHubPlugin;
 export {
-  CoHubPlugin,
+  server,
+  src_default as default,
   CHINESE_PROMPTS,
   CHINESE_INSTRUCTION
 };
