@@ -5,3 +5,6 @@ node_modules/
 .idea
 
 .superpowers
+
+# 自动生成的 prompts .ts 文件（由 scripts/generate-prompts.ts 生成）
+/src/prompts/*.ts

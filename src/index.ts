@@ -197,30 +197,30 @@ const CoHubPlugin: Plugin = async (input, options) => {
     },
     {
       name: 'co-oracle',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-pro', variant: 'max', temperature: 0.1, prompt: '你是战略顾问。用中文回复。' },
+      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-pro', variant: 'max', temperature: 0.1, prompt: ORACLE_PROMPT },
     },
     {
       name: 'co-librarian',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: '你是研究员。用中文回复。' },
+      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: LIBRARIAN_PROMPT },
     },
     {
       name: 'co-explorer',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: '你是代码探索者。用中文回复。' },
+      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: EXPLORER_PROMPT },
     },
     {
       name: 'co-designer',
-      config: { mode: 'subagent', model: 'minimax/MiniMax-M3', variant: 'medium', prompt: '你是设计师。用中文回复。' },
+      config: { mode: 'subagent', model: 'minimax/MiniMax-M3', variant: 'medium', prompt: DESIGNER_PROMPT },
     },
     {
       name: 'co-fixer',
       mode: 'subagent',
       description: '执行者——代码修改、构建、测试',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', variant: 'high', prompt: '你是执行者。用中文回复。' },
+      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', variant: 'high', prompt: FIXER_PROMPT },
     },
     {
       name: 'co-observer',
       description: '观察者——图片/PDF/截图视觉分析',
-      config: { mode: 'subagent', model: 'codermxtest/gpt-5.5', prompt: '你是观察者。用中文回复。' },
+      config: { mode: 'subagent', model: 'codermxtest/gpt-5.5', prompt: OBSERVER_PROMPT },
     },
     {
       name: 'co-council',
@@ -236,22 +236,22 @@ const CoHubPlugin: Plugin = async (input, options) => {
     {
       name: 'co-rule-user',
       description: '用户规范分析——~/.config/opencode/AGENTS.md',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: '你是用户规范分析代理。用中文回复。' },
+      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: RULE_USER_PROMPT },
     },
     {
       name: 'co-rule-project',
       description: '项目规范分析——项目 AGENTS.md',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: '你是项目规范分析代理。用中文回复。' },
+      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: RULE_PROJECT_PROMPT },
     },
     {
       name: 'co-rule-app',
       description: '应用规则分析——.opencode/rules/*.md',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: '你是应用规则分析代理。用中文回复。' },
+      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: RULE_APP_PROMPT },
     },
     {
       name: 'co-planner',
       description: '方案制定——综合需求+信息+规范输出任务分解',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-pro', variant: 'high', prompt: '你是方案制定代理。用中文回复。' },
+      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-pro', variant: 'high', prompt: PLANNER_PROMPT },
     },
   ];
 
@@ -265,6 +265,18 @@ const CoHubPlugin: Plugin = async (input, options) => {
         if (override.variant) (agent.config as Record<string, unknown>).variant = override.variant;
         if (override.prompt) agent.config.prompt = override.prompt;
       }
+    }
+  }
+
+  // ===== 应用文件级覆盖（优先级：文件替换 > 文件追加 > JSON 配置 > 内置常量） =====
+  for (const agent of agents) {
+    const override = fileOverrides[agent.name];
+    if (override) {
+      agent.config.prompt = resolvePrompt(
+        agent.config.prompt as string,
+        override.replace,
+        override.append,
+      );
     }
   }
 
