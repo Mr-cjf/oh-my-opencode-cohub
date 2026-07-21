@@ -39,8 +39,8 @@ const DEFAULT_MODELS: Record<string, string> = {
   planner: 'deepseek/deepseek-v4-pro',
 };
 
-/** 中文提示词映射表 —— 供外部使用 */
-export const CHINESE_PROMPTS: Record<string, string> = {
+/** 中文提示词映射表 */
+const CHINESE_PROMPTS: Record<string, string> = {
   'co-orchestrator': ORCHESTRATOR_PROMPT,
   'co-oracle': ORACLE_PROMPT,
   'co-librarian': LIBRARIAN_PROMPT,
@@ -128,7 +128,7 @@ interface AgentDefinition {
 /**
  * 中文语言指令 —— 可注入到 AGENTS.md 或 instructions
  */
-export const CHINESE_INSTRUCTION = CHINESE_LANGUAGE_INSTRUCTION;
+const CHINESE_INSTRUCTION = CHINESE_LANGUAGE_INSTRUCTION;
 
 const CoHubPlugin: Plugin = async (input, options) => {
   // 方式一：从文件系统加载覆盖
@@ -394,36 +394,35 @@ const CoHubPlugin: Plugin = async (input, options) => {
 
           // 新增：构建上下文
           if (subagentType) {
-            // 修复 C3: 使用 engine 的合并策略
-            const strategy = resolveStrategy(
-              subagentType,
-              contextEngine.getStrategy(subagentType) !== undefined
-                ? { [subagentType]: contextEngine.getStrategy(subagentType) }
-                : contextConfig.strategy ?? {},
-              typeof args.context_override === 'string'
-                ? (args.context_override as ContextStrategy)
-                : undefined,
-            );
+            const strategy = typeof args.context_override === 'string'
+              ? (args.context_override as ContextStrategy)
+              : contextEngine.getStrategy(subagentType);
             if (strategy !== 'none') {
-              console.error('[CONTEXT-DEBUG] before hook: strategy=', strategy, 'agent=', subagentType);
-              console.error('[CONTEXT-DEBUG] before hook: output.args type=', typeof output.args, 'isNull=', output.args === null);
-              // 修复 C1+C2: 同步注册 + 立即注入标记
-              const contextId = contextEngine.registerContext({
-                description,
-              });
-              output.args ??= {};  // ★ 防御 undefined args
-              output.args.description = description +
-                contextEngine.formatMarker(contextId);
-              console.error('[CONTEXT-DEBUG] before hook: marker appended, contextId=', contextId);
-              console.error('[CONTEXT-DEBUG] before hook: description preview=', (output.args.description as string).slice(-80));
-              // 异步填充（不阻塞工具启动）
-              contextEngine.fillContextAsync(contextId, input.sessionID, {
+              const contextId = contextEngine.registerContext({ description });
+              output.args ??= {};
+              const contextBlock = '\n\n### 📋 任务上下文 (CoHub 自动注入)\n' +
+                '**当前任务**: ' + description + '\n';
+              // prompt 是子代理实际看到的消息，description 只是 session 标题
+              const targetField = typeof output.args.prompt === 'string' ? 'prompt' : 'description';
+              output.args[targetField] = (targetField === 'prompt' ? output.args.prompt : description) + contextBlock;
+
+              // 填充上下文（同步等待完成，确保子代理启动前上下文已就绪）
+              await contextEngine.fillContextAsync(contextId, input.sessionID, {
                 strategy,
-              }).catch(() => {});  // 修复 I1: 显式 catch
+              });
+
+              // 追加详细上下文（文件、决策、错误等）
+              const details = contextEngine.formatContextDetails(contextId);
+              if (details) {
+                output.args[targetField] += details;
+              }
+
             }
           }
         }
-      } catch { /* 静默失败 */ }
+      } catch (err) {
+        console.warn('[oh-my-opencode-cohub] tool.execute.before hook 失败:', err);
+      }
     },
 
     // 🆕 拦截 task 工具执行后 — 更新任务状态
@@ -468,30 +467,10 @@ const CoHubPlugin: Plugin = async (input, options) => {
       } catch { /* 静默失败 */ }
     },
 
-    // 🆕 扫描上下文标记 + 注入 Background Job Board
+    // 🆕 注入 Background Job Board
     'experimental.chat.messages.transform': async (_input, output) => {
       try {
-        // 新增：扫描并替换上下文标记（在所有 user 消息中）
-        if (output.messages && Array.isArray(output.messages)) {
-          const userMsgs = output.messages.filter((m: any) => m.info?.role === 'user');
-          console.error('[CONTEXT-DEBUG] transform: total messages=', output.messages.length, 'user messages=', userMsgs.length);
-          for (const msg of output.messages) {
-            if (msg.info.role !== 'user') continue;
-            for (const part of msg.parts ?? []) {
-              if (part.type !== 'text' || !part.text) continue;
-              const hasMarker = /CONTEXT:ID=/.test(part.text);
-              if (hasMarker) {
-                console.error('[CONTEXT-DEBUG] transform: FOUND marker in user msg, text preview=', part.text.slice(0, 200));
-              }
-              const replaced = contextEngine.consumeMarkedContext(part.text);
-              if (replaced !== null) {
-                console.error('[CONTEXT-DEBUG] transform: marker REPLACED, new text preview=', part.text.slice(0, 200));
-              }
-            }
-          }
-        }
-
-        // 现有：注入 Background Job Board（到最后一条 user 消息）
+        // 注入 Background Job Board（到最后一条 user 消息）
         const board = tracker.getBoardText();
         if (board && output.messages && Array.isArray(output.messages)) {
           for (let i = output.messages.length - 1; i >= 0; i--) {
@@ -508,7 +487,9 @@ const CoHubPlugin: Plugin = async (input, options) => {
             }
           }
         }
-      } catch { /* 静默失败 */ }
+      } catch (err) {
+        console.warn('[oh-my-opencode-cohub] messages.transform hook 失败:', err);
+      }
     },
 
     'experimental.chat.system.transform': async (_input, output) => {

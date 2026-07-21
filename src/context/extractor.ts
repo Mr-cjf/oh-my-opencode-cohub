@@ -2,6 +2,27 @@
 
 import type { RelevantFile } from './types';
 
+/** 常见源代码/配置文件扩展名 */
+const KNOWN_EXTENSIONS = new Set([
+  'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'json', 'md', 'mdx',
+  'css', 'scss', 'less', 'html', 'htm', 'py', 'rs', 'go', 'java',
+  'cpp', 'c', 'h', 'hpp', 'rb', 'php', 'swift', 'kt', 'scala',
+  'yml', 'yaml', 'toml', 'xml', 'sql', 'env', 'sh', 'bash', 'ps1',
+  'dockerfile', 'gitignore', 'editorconfig',
+]);
+
+/**
+ * 匹配文本中的文件路径（Windows/Mac/Linux 绝对或相对路径）。
+ *
+ * 支持的路径格式：
+ *   - Windows 绝对路径: C:\path\to\file.ts
+ *   - Unix 绝对路径: /path/to/file.ts
+ *   - 显式相对路径: ./path/to/file.ts, ../path/to/file.ts
+ *   - Home 路径: ~/path/to/file.ts
+ *   - 裸相对路径: path/to/file.ts (fix #)
+ */
+const FILE_PATH_RE = /`?((?:[A-Za-z]:[\\\/]|\.{1,2}[\\\/]|~\/|\/|[\w-]+[\\\/])[\w\-\.\\\/]+\.\w{1,10})`?/g;
+
 /** SDK v2 消息格式（简化） */
 interface SdkMessage {
   info?: { role?: string };
@@ -29,6 +50,21 @@ export function extractRelevantFiles(
         if (path && !fileMap.has(path)) {
           fileMap.set(path, { path, summary: '' });
         }
+        // 扫描 args 中的字符串值（如 prompt 字段里的文件路径）
+        for (const value of Object.values(args)) {
+          if (typeof value !== 'string') continue;
+          let match: RegExpExecArray | null;
+          FILE_PATH_RE.lastIndex = 0;
+          while ((match = FILE_PATH_RE.exec(value)) !== null) {
+            const rawPath = match[1];
+            const ext = rawPath.split('.').pop()?.toLowerCase();
+            if (!ext || !KNOWN_EXTENSIONS.has(ext)) continue;
+            const cleanPath = rawPath.replace(/^`|`$/g, '');
+            if (!fileMap.has(cleanPath)) {
+              fileMap.set(cleanPath, { path: cleanPath, summary: '' });
+            }
+          }
+        }
       }
       // 从工具结果中提取路径和内容摘要
       if (part.type === 'tool_result' && part.tool_result) {
@@ -49,6 +85,22 @@ export function extractRelevantFiles(
           }
           if (!existing.summary && typeof tr.output === 'string') {
             existing.summary = tr.output.slice(0, 100).replace(/\n/g, ' ');
+          }
+        }
+      }
+      // 从文本内容中扫描文件路径（独立于 tool_result 块，扫描所有 text 类型 part）
+      if (typeof part.text === 'string') {
+        let match: RegExpExecArray | null;
+        FILE_PATH_RE.lastIndex = 0;
+        while ((match = FILE_PATH_RE.exec(part.text)) !== null) {
+          const rawPath = match[1];
+          // 提取扩展名验证
+          const ext = rawPath.split('.').pop()?.toLowerCase();
+          if (!ext || !KNOWN_EXTENSIONS.has(ext)) continue;
+          // 清理路径中的 Markdown 反引号
+          const cleanPath = rawPath.replace(/^`|`$/g, '');
+          if (!fileMap.has(cleanPath)) {
+            fileMap.set(cleanPath, { path: cleanPath, summary: '' });
           }
         }
       }

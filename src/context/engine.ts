@@ -104,6 +104,47 @@ export class ContextEngine {
   }
 
   /**
+   * 格式化上下文详情（文件、决策、错误、依赖），不含主标题。
+   * 用于在 tool.execute.before 中直接追加到子代理 prompt。
+   */
+  formatContextDetails(contextId: string): string {
+    const context = this.registry.get(contextId);
+    if (!context) return '';
+
+    const parts: string[] = [];
+
+    if (context.relevantFiles.length > 0) {
+      parts.push('### 📁 相关文件');
+      for (const file of context.relevantFiles) {
+        parts.push(`- \`${file.path}\`` + (file.summary ? ` — ${file.summary}` : ''));
+      }
+    }
+
+    if (context.decisions.length > 0) {
+      parts.push('### 💡 前置决策');
+      for (const d of context.decisions) {
+        parts.push(`- ${d}`);
+      }
+    }
+
+    if (context.errors.length > 0) {
+      parts.push('### ⚠️ 近期错误');
+      for (const e of context.errors) {
+        parts.push(`- ${e}`);
+      }
+    }
+
+    if (context.dependencies.length > 0) {
+      parts.push('### 📦 依赖结果');
+      for (const dep of context.dependencies) {
+        parts.push(`- **${dep.agent}**: ${dep.keyOutput}`);
+      }
+    }
+
+    return parts.length > 0 ? '\n' + parts.join('\n') + '\n' : '';
+  }
+
+  /**
    * Phase C: 捕获子代理结果。
    * 读取子 session 的最终输出 → 提取关键信息 → 存入 dependencyCache。
    */
