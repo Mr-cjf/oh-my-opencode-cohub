@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## [1.4.0] - 2026-07-21
+
+### 新增
+- 子代理上下文共享系统：ContextEngine 完整生命周期，覆盖 registerContext → fillContextAsync → formatContextDetails → captureResult
+- 四种上下文策略（none/relevant/summary/full），支持代理级默认 + 任务级 context_override 覆盖
+- TaskContext 结构化上下文传播：相关文件、前置决策、错误信息、依赖结果自动在子代理间流转
+- `📋 任务上下文` 自动注入子代理 prompt，无需手动拼接
+
+### 修复
+- 修复插件所有 hooks 失效：CHINESE_PROMPTS / CHINESE_INSTRUCTION 字符串被 export 导致 getLegacyPlugins() 抛异常
+- 修复上下文注入未到达子代理：output.args.description 仅为 session 标题，改为优先写入 output.args.prompt
+- 修复 fillContextAsync 竞态条件：异步调用未 await，导致上下文填充未完成子代理已启动
+- 修复上下文详情未注入：formatContextDetails 返回值未追加到子代理 prompt
+- 修复提取器无法从父 session 提取文件路径：新增文本扫描 + tool_call args 字符串值扫描
+
+### 变更
+- 简化 resolveStrategy 三段式条件判断为单行
+- 空 catch {} 改为 console.warn 日志输出，避免静默吞错
+
+### 移除
+- 移除 CHINESE_PROMPTS / CHINESE_INSTRUCTION 的 export（改为内部常量）
+
 ## [1.3.0] - 2026-07-20
 
 ### 新增
