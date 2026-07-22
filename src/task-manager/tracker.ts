@@ -117,23 +117,24 @@ export class TaskTracker {
     lines.push('### Background Job Board');
     lines.push('SENTINEL: background-job-board-v2');
     lines.push('Do not poll running jobs. Wait for hook-driven completion, or use cancel_task only for explicit cancellation. Reconcile terminal jobs before final response.');
-    lines.push('Completed or reconciled sessions are reusable by alias for the same specialist/context.');
-    lines.push('Timed-out running sessions are recoverable by alias for safe resume after a live busy signal.');
+    lines.push('To reuse a completed session, use its Session ID from the table below as task_id (e.g. `ses_xxx`). Passing an alias instead is silently ignored — OpenCode creates a new session instead of reusing.');
     lines.push('Cancelled or errored sessions are not reusable.');
     lines.push('');
 
     if (activeJobs.length > 0) {
       lines.push('#### Active / Unreconciled');
       for (const j of activeJobs) {
-        lines.push(`  - ${j.alias} / ${j.sessionId || 'pending'} / ${j.agent} / ${j.status}`);
+        lines.push(`  - ${j.agent} / ${j.status} / ${j.sessionId || 'pending'} / alias=${j.alias}`);
       }
       lines.push('');
     }
 
     if (reusableJobs.length > 0) {
       lines.push('#### Reusable Sessions');
+      lines.push('  Session ID                            | Agent        | Alias');
+      lines.push('  ---------------------------------------|--------------|-------');
       for (const j of reusableJobs) {
-        lines.push(`  - ${j.alias} / ${j.sessionId || 'n/a'} / ${j.agent} / completed, reusable`);
+        lines.push(`  \`${j.sessionId}\`  | ${j.agent}  | _${j.alias}_`);
       }
       lines.push('');
     }

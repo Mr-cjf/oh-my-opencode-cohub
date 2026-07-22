@@ -386,10 +386,14 @@ const CoHubPlugin: Plugin = async (input, options) => {
           const description = typeof args.description === 'string' ? args.description : '';
 
           // 现有：注册任务
+          // 防御：拦截非法 task_id（非 ses_ 前缀），同时从 output.args 删除避免 OpenCode 校验失败
+          if (typeof args.task_id === 'string' && args.task_id !== '' && !args.task_id.startsWith('ses_')) {
+            delete output.args.task_id;
+          }
           tracker.registerBeforeTask(input.sessionID, {
             description,
             subagent_type: subagentType,
-            task_id: typeof args.task_id === 'string' ? args.task_id : undefined,
+            task_id: (typeof output.args.task_id === 'string' && output.args.task_id.startsWith('ses_')) ? output.args.task_id : undefined,
             background: typeof args.background === 'boolean' ? args.background : undefined,
           });
           syncTrackerState(input.sessionID ?? '');
