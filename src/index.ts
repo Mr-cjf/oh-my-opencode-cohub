@@ -422,7 +422,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
 
               // 诊断日志：记录完整上下文注入结果
               const finalPrompt = typeof output.args?.prompt === 'string' ? output.args.prompt : '';
-              fs.appendFileSync('C:\\Users\\14023\\AppData\\Local\\Temp\\opencode\\ctx-diag.log', JSON.stringify({
+              fs.appendFileSync(path.join(os.tmpdir(), 'opencode', 'ctx-diag.log'), JSON.stringify({
                 time: new Date().toISOString(),
                 session: input.sessionID?.slice(0, 20) ?? '?',
                 subagent: subagentType,

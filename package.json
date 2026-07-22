@@ -27,6 +27,7 @@
   ],
   "scripts": {
     "build": "bun run scripts/generate-prompts.ts && bun build src/index.ts src/tui.ts --outdir dist --target node --format esm --external @opencode-ai/plugin --external @opencode-ai/plugin/* --external @opencode-ai/sdk --external @opencode-ai/sdk/* --external @opentui/core --external @opentui/solid --external zod && bun build src/cli/index.ts --outdir dist/cli --target node --format esm && tsc --emitDeclarationOnly",
+    "test": "bun test",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

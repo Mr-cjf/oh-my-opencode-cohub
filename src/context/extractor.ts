@@ -23,10 +23,23 @@ const KNOWN_EXTENSIONS = new Set([
  */
 const FILE_PATH_RE = /`?((?:[A-Za-z]:[\\\/]|\.{1,2}[\\\/]|~\/|\/|[\w-]+[\\\/])[\w\-\.\\\/]+\.\w{1,10})`?/g;
 
+/** SDK v2 Part 格式（简化） */
+interface SdkPart {
+  type?: string;
+  text?: string;
+  tool?: string;
+  state?: {
+    status?: string;
+    input?: Record<string, unknown>;
+    output?: string;
+    error?: string;
+  };
+}
+
 /** SDK v2 消息格式（简化） */
 interface SdkMessage {
   info?: { role?: string };
-  parts?: Array<{ type?: string; text?: string; tool?: string; args?: unknown; tool_result?: unknown }>;
+  parts?: SdkPart[];
 }
 
 /**
@@ -43,15 +56,35 @@ export function extractRelevantFiles(
 
   for (const msg of recent) {
     for (const part of msg.parts ?? []) {
-      // 从工具调用中提取路径
-      if (part.type === 'tool_call' && part.args) {
-        const args = part.args as Record<string, unknown>;
-        const path = extractPath(args);
-        if (path && !fileMap.has(path)) {
-          fileMap.set(path, { path, summary: '' });
+      // 统一处理 type === 'tool' 的 part（SDK 统一使用此类型）
+      if (part.type === 'tool' && part.state) {
+        const state = part.state;
+        const input = (state.input ?? {}) as Record<string, unknown>;
+
+        // 1. 从 input 提取路径
+        const path = extractPath(input);
+        if (path) {
+          if (!fileMap.has(path)) {
+            fileMap.set(path, { path, summary: '' });
+          }
+          const existing = fileMap.get(path)!;
+          // 提取行号范围
+          if (typeof input.offset === 'number') {
+            const limit = typeof input.limit === 'number' ? input.limit : 50;
+            existing.lines = `${input.offset}-${input.offset + limit}`;
+          }
+          // 提取编辑摘要
+          if (typeof input.oldString === 'string') {
+            existing.summary = `编辑: ${input.oldString.slice(0, 80)}`;
+          }
+          // 从 output 提取摘要
+          if (state.status === 'completed' && typeof state.output === 'string' && !existing.summary) {
+            existing.summary = state.output.slice(0, 100).replace(/\n/g, ' ');
+          }
         }
-        // 扫描 args 中的字符串值（如 prompt 字段里的文件路径）
-        for (const value of Object.values(args)) {
+
+        // 2. 扫描 input 中的字符串值（如 prompt 字段里的文件路径）
+        for (const value of Object.values(input)) {
           if (typeof value !== 'string') continue;
           let match: RegExpExecArray | null;
           FILE_PATH_RE.lastIndex = 0;
@@ -65,26 +98,19 @@ export function extractRelevantFiles(
             }
           }
         }
-      }
-      // 从工具结果中提取路径和内容摘要
-      if (part.type === 'tool_result' && part.tool_result) {
-        const tr = part.tool_result as Record<string, unknown>;
-        const path = extractPath(tr);
-        if (path && fileMap.has(path)) {
-          const existing = fileMap.get(path)!;
-          // 尝试提取行号范围
-          const args = tr.args as Record<string, unknown> | undefined;
-          if (args) {
-            if (typeof args.offset === 'number') {
-              const limit = typeof args.limit === 'number' ? args.limit : 50;
-              existing.lines = `${args.offset}-${args.offset + limit}`;
+
+        // 3. 从 completed 状态的 output 中扫描额外路径
+        if (state.status === 'completed' && typeof state.output === 'string') {
+          let match: RegExpExecArray | null;
+          FILE_PATH_RE.lastIndex = 0;
+          while ((match = FILE_PATH_RE.exec(state.output)) !== null) {
+            const rawPath = match[1];
+            const ext = rawPath.split('.').pop()?.toLowerCase();
+            if (!ext || !KNOWN_EXTENSIONS.has(ext)) continue;
+            const cleanPath = rawPath.replace(/^`|`$/g, '');
+            if (!fileMap.has(cleanPath)) {
+              fileMap.set(cleanPath, { path: cleanPath, summary: '' });
             }
-            if (typeof args.oldString === 'string') {
-              existing.summary = `编辑位置: ${args.oldString.slice(0, 80)}`;
-            }
-          }
-          if (!existing.summary && typeof tr.output === 'string') {
-            existing.summary = tr.output.slice(0, 100).replace(/\n/g, ' ');
           }
         }
       }
@@ -163,9 +189,11 @@ export function extractErrors(
 
   for (const msg of recent) {
     for (const part of msg.parts ?? []) {
-      if (part.type !== 'tool_result' || !part.tool_result) continue;
-      const tr = part.tool_result as Record<string, unknown>;
-      const output = typeof tr.output === 'string' ? tr.output : '';
+      if (part.type !== 'tool' || !part.state) continue;
+      const state = part.state;
+      const output = state.status === 'error'
+        ? (typeof state.error === 'string' ? state.error : '')
+        : (typeof state.output === 'string' ? state.output : '');
       if (!output) continue;
       const lines = output.split('\n');
       for (const line of lines) {

@@ -63,7 +63,7 @@ export class ContextEngine {
       });
       const messages = (messagesResult.data ?? []) as Array<{
         info?: { role?: string };
-        parts?: Array<{ type?: string; text?: string; tool?: string; args?: unknown; tool_result?: unknown }>;
+        parts?: Array<{ type?: string; text?: string; tool?: string; state?: { status?: string; input?: Record<string, unknown>; output?: string; error?: string } }>;
       }>;
 
       if (args.strategy === 'relevant' || args.strategy === 'summary' || args.strategy === 'full') {
