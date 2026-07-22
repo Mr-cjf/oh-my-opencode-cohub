@@ -14,6 +14,7 @@ import { RULE_APP_PROMPT } from './prompts/rule-app';
 import { PLANNER_PROMPT } from './prompts/planner';
 import { CHINESE_LANGUAGE_INSTRUCTION } from './instructions/chinese';
 import { TaskTracker } from './task-manager/tracker';
+import { RuleInjector } from './rule-injector';
 import { ContextEngine } from './context/engine';
 import { resolveStrategy } from './context/strategy';
 import type { ContextStrategy } from './context/types';
@@ -39,8 +40,8 @@ const DEFAULT_MODELS: Record<string, string> = {
   planner: 'deepseek/deepseek-v4-pro',
 };
 
-/** 中文提示词映射表 —— 供外部使用 */
-export const CHINESE_PROMPTS: Record<string, string> = {
+/** 中文提示词映射表 */
+const CHINESE_PROMPTS: Record<string, string> = {
   'co-orchestrator': ORCHESTRATOR_PROMPT,
   'co-oracle': ORACLE_PROMPT,
   'co-librarian': LIBRARIAN_PROMPT,
@@ -128,7 +129,7 @@ interface AgentDefinition {
 /**
  * 中文语言指令 —— 可注入到 AGENTS.md 或 instructions
  */
-export const CHINESE_INSTRUCTION = CHINESE_LANGUAGE_INSTRUCTION;
+const CHINESE_INSTRUCTION = CHINESE_LANGUAGE_INSTRUCTION;
 
 const CoHubPlugin: Plugin = async (input, options) => {
   // 方式一：从文件系统加载覆盖
@@ -145,6 +146,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
   const promptOverrides = { ...configOverrides, ...fileOverrides };
 
   const tracker = new TaskTracker();
+  const ruleInjector = new RuleInjector();
 
   // ===== TUI 状态同步 =====
   const STATE_DIR = path.join(os.homedir(), '.local', 'share', 'opencode', 'storage', 'oh-my-opencode-cohub');
@@ -197,30 +199,30 @@ const CoHubPlugin: Plugin = async (input, options) => {
     },
     {
       name: 'co-oracle',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-pro', variant: 'max', temperature: 0.1, prompt: '你是战略顾问。用中文回复。' },
+      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-pro', variant: 'max', temperature: 0.1, prompt: ORACLE_PROMPT },
     },
     {
       name: 'co-librarian',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: '你是研究员。用中文回复。' },
+      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: LIBRARIAN_PROMPT },
     },
     {
       name: 'co-explorer',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: '你是代码探索者。用中文回复。' },
+      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: EXPLORER_PROMPT },
     },
     {
       name: 'co-designer',
-      config: { mode: 'subagent', model: 'minimax/MiniMax-M3', variant: 'medium', prompt: '你是设计师。用中文回复。' },
+      config: { mode: 'subagent', model: 'minimax/MiniMax-M3', variant: 'medium', prompt: DESIGNER_PROMPT },
     },
     {
       name: 'co-fixer',
       mode: 'subagent',
       description: '执行者——代码修改、构建、测试',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', variant: 'high', prompt: '你是执行者。用中文回复。' },
+      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', variant: 'high', prompt: FIXER_PROMPT },
     },
     {
       name: 'co-observer',
       description: '观察者——图片/PDF/截图视觉分析',
-      config: { mode: 'subagent', model: 'codermxtest/gpt-5.5', prompt: '你是观察者。用中文回复。' },
+      config: { mode: 'subagent', model: 'codermxtest/gpt-5.5', prompt: OBSERVER_PROMPT },
     },
     {
       name: 'co-council',
@@ -236,22 +238,22 @@ const CoHubPlugin: Plugin = async (input, options) => {
     {
       name: 'co-rule-user',
       description: '用户规范分析——~/.config/opencode/AGENTS.md',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: '你是用户规范分析代理。用中文回复。' },
+      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: RULE_USER_PROMPT },
     },
     {
       name: 'co-rule-project',
       description: '项目规范分析——项目 AGENTS.md',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: '你是项目规范分析代理。用中文回复。' },
+      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: RULE_PROJECT_PROMPT },
     },
     {
       name: 'co-rule-app',
       description: '应用规则分析——.opencode/rules/*.md',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: '你是应用规则分析代理。用中文回复。' },
+      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: RULE_APP_PROMPT },
     },
     {
       name: 'co-planner',
       description: '方案制定——综合需求+信息+规范输出任务分解',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-pro', variant: 'high', prompt: '你是方案制定代理。用中文回复。' },
+      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-pro', variant: 'high', prompt: PLANNER_PROMPT },
     },
   ];
 
@@ -265,6 +267,18 @@ const CoHubPlugin: Plugin = async (input, options) => {
         if (override.variant) (agent.config as Record<string, unknown>).variant = override.variant;
         if (override.prompt) agent.config.prompt = override.prompt;
       }
+    }
+  }
+
+  // ===== 应用文件级覆盖（优先级：文件替换 > 文件追加 > JSON 配置 > 内置常量） =====
+  for (const agent of agents) {
+    const override = fileOverrides[agent.name];
+    if (override) {
+      agent.config.prompt = resolvePrompt(
+        agent.config.prompt as string,
+        override.replace,
+        override.append,
+      );
     }
   }
 
@@ -382,36 +396,50 @@ const CoHubPlugin: Plugin = async (input, options) => {
 
           // 新增：构建上下文
           if (subagentType) {
-            // 修复 C3: 使用 engine 的合并策略
-            const strategy = resolveStrategy(
-              subagentType,
-              contextEngine.getStrategy(subagentType) !== undefined
-                ? { [subagentType]: contextEngine.getStrategy(subagentType) }
-                : contextConfig.strategy ?? {},
-              typeof args.context_override === 'string'
-                ? (args.context_override as ContextStrategy)
-                : undefined,
-            );
+            const strategy = typeof args.context_override === 'string'
+              ? (args.context_override as ContextStrategy)
+              : contextEngine.getStrategy(subagentType);
             if (strategy !== 'none') {
-              console.error('[CONTEXT-DEBUG] before hook: strategy=', strategy, 'agent=', subagentType);
-              console.error('[CONTEXT-DEBUG] before hook: output.args type=', typeof output.args, 'isNull=', output.args === null);
-              // 修复 C1+C2: 同步注册 + 立即注入标记
-              const contextId = contextEngine.registerContext({
-                description,
-              });
-              output.args ??= {};  // ★ 防御 undefined args
-              output.args.description = description +
-                contextEngine.formatMarker(contextId);
-              console.error('[CONTEXT-DEBUG] before hook: marker appended, contextId=', contextId);
-              console.error('[CONTEXT-DEBUG] before hook: description preview=', (output.args.description as string).slice(-80));
-              // 异步填充（不阻塞工具启动）
-              contextEngine.fillContextAsync(contextId, input.sessionID, {
+              const contextId = contextEngine.registerContext({ description });
+              output.args ??= {};
+              const contextBlock = '\n\n### 📋 任务上下文 (CoHub 自动注入)\n' +
+                '**当前任务**: ' + description + '\n';
+              // prompt 是子代理实际看到的消息，description 只是 session 标题
+              const targetField = typeof output.args.prompt === 'string' ? 'prompt' : 'description';
+              output.args[targetField] = (targetField === 'prompt' ? output.args.prompt : description) + contextBlock;
+
+
+              // 填充上下文（同步等待完成，确保子代理启动前上下文已就绪）
+              await contextEngine.fillContextAsync(contextId, input.sessionID, {
                 strategy,
-              }).catch(() => {});  // 修复 I1: 显式 catch
+              });
+
+              // 追加详细上下文（文件、决策、错误等）
+              const details = contextEngine.formatContextDetails(contextId);
+              if (details) {
+                output.args[targetField] += details;
+              }
+
+              // 诊断日志：记录完整上下文注入结果
+              const finalPrompt = typeof output.args?.prompt === 'string' ? output.args.prompt : '';
+              fs.appendFileSync(path.join(os.tmpdir(), 'opencode', 'ctx-diag.log'), JSON.stringify({
+                time: new Date().toISOString(),
+                session: input.sessionID?.slice(0, 20) ?? '?',
+                subagent: subagentType,
+                strategy,
+                targetField,
+                hasDetails: !!details,
+                detailsLen: details ? details.length : 0,
+                detailsPreview: details ? details.replace(/\n/g, '\\n').slice(0, 200) : '',
+                promptEnd: finalPrompt.slice(-120),
+              }) + '\n');
+
             }
           }
         }
-      } catch { /* 静默失败 */ }
+      } catch (err) {
+        console.warn('[oh-my-opencode-cohub] tool.execute.before hook 失败:', err);
+      }
     },
 
     // 🆕 拦截 task 工具执行后 — 更新任务状态
@@ -449,37 +477,43 @@ const CoHubPlugin: Plugin = async (input, options) => {
           if (job) {
             void contextEngine.captureResult(sessionId, job.alias, job.agent);
           }
-        } else if (e.type === 'session.deleted' || e.type === 'session.error') {
+        } else if (e.type === 'session.deleted') {
+          tracker.updateByChildSessionId(sessionId, 'errored');
+          syncTrackerState(tracker.currentParentSessionId);
+          // 清理规则注入器的 session 计数器
+          ruleInjector.cleanup(sessionId);
+        } else if (e.type === 'session.error') {
           tracker.updateByChildSessionId(sessionId, 'errored');
           syncTrackerState(tracker.currentParentSessionId);
         }
       } catch { /* 静默失败 */ }
     },
 
-    // 🆕 扫描上下文标记 + 注入 Background Job Board
-    'experimental.chat.messages.transform': async (_input, output) => {
+    // ===== 周期性规则提醒注入（L2：防止长会话规则遗忘） =====
+    'chat.message': async (input, output) => {
       try {
-        // 新增：扫描并替换上下文标记（在所有 user 消息中）
-        if (output.messages && Array.isArray(output.messages)) {
-          const userMsgs = output.messages.filter((m: any) => m.info?.role === 'user');
-          console.error('[CONTEXT-DEBUG] transform: total messages=', output.messages.length, 'user messages=', userMsgs.length);
-          for (const msg of output.messages) {
-            if (msg.info.role !== 'user') continue;
-            for (const part of msg.parts ?? []) {
-              if (part.type !== 'text' || !part.text) continue;
-              const hasMarker = /CONTEXT:ID=/.test(part.text);
-              if (hasMarker) {
-                console.error('[CONTEXT-DEBUG] transform: FOUND marker in user msg, text preview=', part.text.slice(0, 200));
-              }
-              const replaced = contextEngine.consumeMarkedContext(part.text);
-              if (replaced !== null) {
-                console.error('[CONTEXT-DEBUG] transform: marker REPLACED, new text preview=', part.text.slice(0, 200));
-              }
+        // 仅对 co-orchestrator 注入规则提醒
+        if (input.agent !== 'co-orchestrator') return;
+
+        const reminder = ruleInjector.tick(input.sessionID);
+        if (reminder && output.parts && Array.isArray(output.parts)) {
+          for (let j = output.parts.length - 1; j >= 0; j--) {
+            const part = output.parts[j];
+            if (part.type === 'text') {
+              part.text += reminder;
+              break;
             }
           }
         }
+      } catch (err) {
+        console.warn('[oh-my-opencode-cohub] chat.message hook 失败:', err);
+      }
+    },
 
-        // 现有：注入 Background Job Board（到最后一条 user 消息）
+    // 🆕 注入 Background Job Board
+    'experimental.chat.messages.transform': async (_input, output) => {
+      try {
+        // 注入 Background Job Board（到最后一条 user 消息）
         const board = tracker.getBoardText();
         if (board && output.messages && Array.isArray(output.messages)) {
           for (let i = output.messages.length - 1; i >= 0; i--) {
@@ -496,7 +530,9 @@ const CoHubPlugin: Plugin = async (input, options) => {
             }
           }
         }
-      } catch { /* 静默失败 */ }
+      } catch (err) {
+        console.warn('[oh-my-opencode-cohub] messages.transform hook 失败:', err);
+      }
     },
 
     'experimental.chat.system.transform': async (_input, output) => {

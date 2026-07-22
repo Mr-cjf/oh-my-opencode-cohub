@@ -1,5 +1,68 @@
 # CHANGELOG
 
+## [1.5.1] - 2026-07-22
+
+### 修复
+- 修复子代理上下文提取器使用不存在的 SDK Part 类型名（`tool_call`/`tool_result`），改为 SDK 实际 `type: 'tool'` + `state` 结构，使 Read/Edit/Write 等工具调用信息能正确提取
+- 修复 `extractErrors` 中 `||` 短路语义问题，改为显式 `status === 'error'` 判断
+- 修复诊断日志硬编码路径，改用 `os.tmpdir()`
+
+### 新增
+- 新增 `src/context/extractor.test.ts`，31 个单元测试覆盖 extractRelevantFiles / extractErrors / extractDecisions
+- 升级诊断日志：注入完成后记录完整上下文（time/session/subagent/detailsPreview/detailsLen）
+- 新增 `npm test` 脚本（`bun test`）
+
+## [1.5.0] - 2026-07-22
+
+### 新增
+- L2 规则重注入：RuleInjector 模块，通过 chat.message hook 每 5 轮为 orchestrator 注入规则提醒
+- L3 状态锁：规则 4（todowrite 状态锁），委派 co-fixer 前强制检查 todowrite 方案状态
+- 自检清单：每次回复前强制逐条确认核心行为准则
+
+### 变更
+- orchestrator 提示词重构：核心规则从文件中间移到末尾（利用 recency bias），四条规则用 XML 标签包裹
+- 规则 1 增加长会话警告，强调每次新需求必须重新执行分析→方案→确认→执行
+- 自检清单从初版 4 条精简为 2 条核心检查
+- event hook 拆分 session.deleted 分支，增加 RuleInjector 清理逻辑
+
+## [1.4.0] - 2026-07-21
+
+### 新增
+- 子代理上下文共享系统：ContextEngine 完整生命周期，覆盖 registerContext → fillContextAsync → formatContextDetails → captureResult
+- 四种上下文策略（none/relevant/summary/full），支持代理级默认 + 任务级 context_override 覆盖
+- TaskContext 结构化上下文传播：相关文件、前置决策、错误信息、依赖结果自动在子代理间流转
+- `📋 任务上下文` 自动注入子代理 prompt，无需手动拼接
+
+### 修复
+- 修复插件所有 hooks 失效：CHINESE_PROMPTS / CHINESE_INSTRUCTION 字符串被 export 导致 getLegacyPlugins() 抛异常
+- 修复上下文注入未到达子代理：output.args.description 仅为 session 标题，改为优先写入 output.args.prompt
+- 修复 fillContextAsync 竞态条件：异步调用未 await，导致上下文填充未完成子代理已启动
+- 修复上下文详情未注入：formatContextDetails 返回值未追加到子代理 prompt
+- 修复提取器无法从父 session 提取文件路径：新增文本扫描 + tool_call args 字符串值扫描
+
+### 变更
+- 简化 resolveStrategy 三段式条件判断为单行
+- 空 catch {} 改为 console.warn 日志输出，避免静默吞错
+
+### 移除
+- 移除 CHINESE_PROMPTS / CHINESE_INSTRUCTION 的 export（改为内部常量）
+
+## [1.3.0] - 2026-07-20
+
+### 新增
+- 提示词源文件迁移为 Markdown 格式（`src/prompts/*.md`），直接编辑更直观
+- 新增 `scripts/generate-prompts.ts`，构建时自动将 .md 转换为 .ts 常量文件
+- 用户自定义 .md 覆盖机制现已生效，支持项目级和用户级覆盖
+
+### 修复
+- 修复 co-oracle / co-librarian / co-explorer / co-designer / co-fixer / co-observer / co-planner / co-rule-user / co-rule-project / co-rule-app 共 10 个代理使用占位符而非完整提示词的问题
+- 修复 `loadFileOverrides()` 死代码，运行时 .md 文件覆盖逻辑现在正确应用
+
+### 变更
+- `src/prompts/*.ts` 转为构建时自动生成，不再手动维护
+- `package.json` build 脚本前置增加 `bun run scripts/generate-prompts.ts` 步骤
+- `.gitignore` 新增 `src/prompts/*.ts` 忽略规则
+
 ## [1.2.4] - 2026-07-20
 
 ### 新增

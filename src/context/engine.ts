@@ -63,7 +63,7 @@ export class ContextEngine {
       });
       const messages = (messagesResult.data ?? []) as Array<{
         info?: { role?: string };
-        parts?: Array<{ type?: string; text?: string; tool?: string; args?: unknown; tool_result?: unknown }>;
+        parts?: Array<{ type?: string; text?: string; tool?: string; state?: { status?: string; input?: Record<string, unknown>; output?: string; error?: string } }>;
       }>;
 
       if (args.strategy === 'relevant' || args.strategy === 'summary' || args.strategy === 'full') {
@@ -101,6 +101,47 @@ export class ContextEngine {
     // 消费后清理
     this.registry.delete(contextId);
     return result;
+  }
+
+  /**
+   * 格式化上下文详情（文件、决策、错误、依赖），不含主标题。
+   * 用于在 tool.execute.before 中直接追加到子代理 prompt。
+   */
+  formatContextDetails(contextId: string): string {
+    const context = this.registry.get(contextId);
+    if (!context) return '';
+
+    const parts: string[] = [];
+
+    if (context.relevantFiles.length > 0) {
+      parts.push('### 📁 相关文件');
+      for (const file of context.relevantFiles) {
+        parts.push(`- \`${file.path}\`` + (file.summary ? ` — ${file.summary}` : ''));
+      }
+    }
+
+    if (context.decisions.length > 0) {
+      parts.push('### 💡 前置决策');
+      for (const d of context.decisions) {
+        parts.push(`- ${d}`);
+      }
+    }
+
+    if (context.errors.length > 0) {
+      parts.push('### ⚠️ 近期错误');
+      for (const e of context.errors) {
+        parts.push(`- ${e}`);
+      }
+    }
+
+    if (context.dependencies.length > 0) {
+      parts.push('### 📦 依赖结果');
+      for (const dep of context.dependencies) {
+        parts.push(`- **${dep.agent}**: ${dep.keyOutput}`);
+      }
+    }
+
+    return parts.length > 0 ? '\n' + parts.join('\n') + '\n' : '';
   }
 
   /**
