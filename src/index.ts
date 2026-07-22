@@ -14,6 +14,7 @@ import { RULE_APP_PROMPT } from './prompts/rule-app';
 import { PLANNER_PROMPT } from './prompts/planner';
 import { CHINESE_LANGUAGE_INSTRUCTION } from './instructions/chinese';
 import { TaskTracker } from './task-manager/tracker';
+import { RuleInjector } from './rule-injector';
 import { ContextEngine } from './context/engine';
 import { resolveStrategy } from './context/strategy';
 import type { ContextStrategy } from './context/types';
@@ -145,6 +146,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
   const promptOverrides = { ...configOverrides, ...fileOverrides };
 
   const tracker = new TaskTracker();
+  const ruleInjector = new RuleInjector();
 
   // ===== TUI 状态同步 =====
   const STATE_DIR = path.join(os.homedir(), '.local', 'share', 'opencode', 'storage', 'oh-my-opencode-cohub');
@@ -406,6 +408,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
               const targetField = typeof output.args.prompt === 'string' ? 'prompt' : 'description';
               output.args[targetField] = (targetField === 'prompt' ? output.args.prompt : description) + contextBlock;
 
+
               // 填充上下文（同步等待完成，确保子代理启动前上下文已就绪）
               await contextEngine.fillContextAsync(contextId, input.sessionID, {
                 strategy,
@@ -416,6 +419,20 @@ const CoHubPlugin: Plugin = async (input, options) => {
               if (details) {
                 output.args[targetField] += details;
               }
+
+              // 诊断日志：记录完整上下文注入结果
+              const finalPrompt = typeof output.args?.prompt === 'string' ? output.args.prompt : '';
+              fs.appendFileSync('C:\\Users\\14023\\AppData\\Local\\Temp\\opencode\\ctx-diag.log', JSON.stringify({
+                time: new Date().toISOString(),
+                session: input.sessionID?.slice(0, 20) ?? '?',
+                subagent: subagentType,
+                strategy,
+                targetField,
+                hasDetails: !!details,
+                detailsLen: details ? details.length : 0,
+                detailsPreview: details ? details.replace(/\n/g, '\\n').slice(0, 200) : '',
+                promptEnd: finalPrompt.slice(-120),
+              }) + '\n');
 
             }
           }
@@ -460,11 +477,37 @@ const CoHubPlugin: Plugin = async (input, options) => {
           if (job) {
             void contextEngine.captureResult(sessionId, job.alias, job.agent);
           }
-        } else if (e.type === 'session.deleted' || e.type === 'session.error') {
+        } else if (e.type === 'session.deleted') {
+          tracker.updateByChildSessionId(sessionId, 'errored');
+          syncTrackerState(tracker.currentParentSessionId);
+          // 清理规则注入器的 session 计数器
+          ruleInjector.cleanup(sessionId);
+        } else if (e.type === 'session.error') {
           tracker.updateByChildSessionId(sessionId, 'errored');
           syncTrackerState(tracker.currentParentSessionId);
         }
       } catch { /* 静默失败 */ }
+    },
+
+    // ===== 周期性规则提醒注入（L2：防止长会话规则遗忘） =====
+    'chat.message': async (input, output) => {
+      try {
+        // 仅对 co-orchestrator 注入规则提醒
+        if (input.agent !== 'co-orchestrator') return;
+
+        const reminder = ruleInjector.tick(input.sessionID);
+        if (reminder && output.parts && Array.isArray(output.parts)) {
+          for (let j = output.parts.length - 1; j >= 0; j--) {
+            const part = output.parts[j];
+            if (part.type === 'text') {
+              part.text += reminder;
+              break;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[oh-my-opencode-cohub] chat.message hook 失败:', err);
+      }
     },
 
     // 🆕 注入 Background Job Board
