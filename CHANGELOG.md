@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## [1.5.0] - 2026-07-22
+
+### 新增
+- L2 规则重注入：RuleInjector 模块，通过 chat.message hook 每 5 轮为 orchestrator 注入规则提醒
+- L3 状态锁：规则 4（todowrite 状态锁），委派 co-fixer 前强制检查 todowrite 方案状态
+- 自检清单：每次回复前强制逐条确认核心行为准则
+
+### 变更
+- orchestrator 提示词重构：核心规则从文件中间移到末尾（利用 recency bias），四条规则用 XML 标签包裹
+- 规则 1 增加长会话警告，强调每次新需求必须重新执行分析→方案→确认→执行
+- 自检清单从初版 4 条精简为 2 条核心检查
+- event hook 拆分 session.deleted 分支，增加 RuleInjector 清理逻辑
+
 ## [1.4.0] - 2026-07-21
 
 ### 新增
