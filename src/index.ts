@@ -420,9 +420,18 @@ const CoHubPlugin: Plugin = async (input, options) => {
                 output.args[targetField] += details;
               }
 
-              // 诊断日志：记录完整上下文注入结果
+              // 诊断日志：记录完整上下文注入结果（超过 50KB 自动截断保留最后 30 条）
+              const logPath = path.join(os.tmpdir(), 'opencode', 'ctx-diag.log');
+              try {
+                const stat = fs.statSync(logPath);
+                if (stat.size > 50 * 1024) {
+                  // 超过 50KB，保留最后 30 条
+                  const lines = fs.readFileSync(logPath, 'utf-8').trim().split('\n');
+                  fs.writeFileSync(logPath, lines.slice(-30).join('\n') + '\n');
+                }
+              } catch { /* 文件不存在，跳过 */ }
               const finalPrompt = typeof output.args?.prompt === 'string' ? output.args.prompt : '';
-              fs.appendFileSync(path.join(os.tmpdir(), 'opencode', 'ctx-diag.log'), JSON.stringify({
+              fs.appendFileSync(logPath, JSON.stringify({
                 time: new Date().toISOString(),
                 session: input.sessionID?.slice(0, 20) ?? '?',
                 subagent: subagentType,
