@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## [1.5.3] - 2026-07-22
+
+### 修复
+- 修复 Background Job Board "reusable by alias" 指令导致 orchestrator 误用 alias 作为 task_id，session 复用不生效。重写为正向指引（用 Session ID 列），陈述传 alias 的真实后果（静默创建新 session 而非复用）
+- 新增 task_id 防御拦截：非 ses_ 前缀的非法值在 tool.execute.before hook 中直接删除，不依赖 OpenCode 静默兜底
+
+### 变更
+- Background Job Board 输出格式重构：Active Jobs 字段重排（agent 在前，alias 后置加 alias= 标注），Reusable Sessions 改为表格格式
+- 删除 Board 中未实现的"超时恢复"指令（运行中任务无 sessionId，功能从未存在）
+- orchestrator 提示词优化：规则 3 强调"方案检查→使用 co-explorer 搜索→co-librarian 验证方案信息"
+
+### 移除
+- Board 中 "Timed-out running sessions are recoverable by alias" 指令（幻影功能）
+
 ## [1.5.2] - 2026-07-22
 
 ### 修复
