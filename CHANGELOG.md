@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## [1.5.1] - 2026-07-22
+
+### 修复
+- 修复子代理上下文提取器使用不存在的 SDK Part 类型名（`tool_call`/`tool_result`），改为 SDK 实际 `type: 'tool'` + `state` 结构，使 Read/Edit/Write 等工具调用信息能正确提取
+- 修复 `extractErrors` 中 `||` 短路语义问题，改为显式 `status === 'error'` 判断
+- 修复诊断日志硬编码路径，改用 `os.tmpdir()`
+
+### 新增
+- 新增 `src/context/extractor.test.ts`，31 个单元测试覆盖 extractRelevantFiles / extractErrors / extractDecisions
+- 升级诊断日志：注入完成后记录完整上下文（time/session/subagent/detailsPreview/detailsLen）
+- 新增 `npm test` 脚本（`bun test`）
+
 ## [1.5.0] - 2026-07-22
 
 ### 新增
