@@ -141,6 +141,38 @@ export class PlanApprovalManager {
   }
 
   /**
+   * 生成注入到消息末尾的行为准则文本（利用 recency bias 对抗注意力衰减）。
+   * 仅对已观察的 orchestrator session 返回内容，否则返回 null。
+   * 不超过 25 行，不持久化到 DB（由调用方注入到 messages.transform）。
+   */
+  getInjectionText(sessionID: string): string | null {
+    const state = this.sessions.get(sessionID);
+    if (!state || state.generation === 0) return null;
+    const approved = this.isApproved(sessionID);
+    const status = approved ? '已批准' : '未批准';
+    const lines: string[] = [];
+
+    lines.push('');
+    lines.push('--- 行为准则（本次 LLM 请求注入，不持久化） ---');
+    lines.push(`当前 generation: ${state.generation}，方案状态: ${status}`);
+    lines.push('');
+    lines.push('核心规则：');
+    lines.push('1. 需要改代码 -> 先输出方案 -> todowrite -> request_plan_approval -> 等弹窗确认');
+    lines.push('2. 文件操作 -> 委派子代理，禁止亲自使用 read/grep/edit/bash/write');
+    lines.push('3. 未批准方案时禁止委派 co-fixer / co-designer');
+    lines.push('4. 每个新用户消息自动撤销旧批准');
+    lines.push('');
+    if (approved) {
+      lines.push('可委派 co-fixer / co-designer');
+      lines.push('');
+    }
+    lines.push('自检：需要改代码？-> 先方案  委派 fixer？-> 查状态锁');
+    lines.push('--- 注入结束 ---');
+
+    return lines.join('\n');
+  }
+
+  /**
    * 清理指定 session 的状态。
    */
   cleanup(sessionID: string): void {

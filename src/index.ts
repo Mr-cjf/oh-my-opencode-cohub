@@ -549,22 +549,44 @@ const CoHubPlugin: Plugin = async (input, options) => {
       }
     },
 
-    // 🆕 注入 Background Job Board
+    // 🆕 注入 Background Job Board + PlanGate 核心规则
     'experimental.chat.messages.transform': async (_input, output) => {
       try {
-        // 注入 Background Job Board（到最后一条 user 消息）
+        if (!output.messages || !Array.isArray(output.messages)) return;
+
+        // 从最后一条 user 消息提取 sessionID
+        let lastUserMsg: (typeof output.messages)[number] | undefined;
+        let sessionID: string | undefined;
+        for (let i = output.messages.length - 1; i >= 0; i--) {
+          const m = output.messages[i];
+          if (m.info.role === 'user') {
+            lastUserMsg = m;
+            sessionID = m.info?.sessionID as string | undefined;
+            break;
+          }
+        }
+
+        if (!lastUserMsg) return;
+
+        // 1. 注入 Background Job Board
         const board = tracker.getBoardText();
-        if (board && output.messages && Array.isArray(output.messages)) {
-          for (let i = output.messages.length - 1; i >= 0; i--) {
-            const msg = output.messages[i];
-            if (msg.info.role === 'user') {
-              for (let j = msg.parts.length - 1; j >= 0; j--) {
-                const part = msg.parts[j];
-                if (part.type === 'text') {
-                  part.text += '\n\n' + board;
-                  break;
-                }
-              }
+        if (board) {
+          for (let j = lastUserMsg.parts.length - 1; j >= 0; j--) {
+            const part = lastUserMsg.parts[j];
+            if (part.type === 'text') {
+              part.text += '\n\n' + board;
+              break;
+            }
+          }
+        }
+
+        // 2. 注入 PlanGate 核心规则（利用 recency bias 对抗注意力衰减）
+        const planInject = sessionID ? planManager.getInjectionText(sessionID) : null;
+        if (planInject) {
+          for (let j = lastUserMsg.parts.length - 1; j >= 0; j--) {
+            const part = lastUserMsg.parts[j];
+            if (part.type === 'text') {
+              part.text += planInject;
               break;
             }
           }
