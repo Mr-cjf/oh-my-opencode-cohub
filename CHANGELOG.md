@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## [1.6.0] - 2026-07-23
+
+### 新增
+- request_plan_approval 自定义工具：通过 OpenCode 原生权限确认框发起方案批准
+- PlanApprovalManager 许可租约：generation 机制，新用户消息自动撤销旧批准
+- tool.execute.before 可写代理执行门禁：未批准方案时拒绝 co-fixer/co-designer 委派
+- system.transform 动态注入 plan gate 状态，每次 LLM 请求刷新
+
+### 变更
+- orchestrator 提示词升级：todowrite 状态锁 → 方案批准门禁，覆盖范围扩展至 co-designer
+- 替代旧的 RuleInjector 周期性提醒机制（用户可见注入 → 程序化硬门禁）
+
+### 移除
+- src/rule-injector.ts：L2 周期性规则提醒注入器
+
 ## [1.5.3] - 2026-07-22
 
 ### 修复
