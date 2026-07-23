@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## [1.7.0] - 2026-07-23
+
+### 新增
+- PlanGate 有界审计日志：记录批准生命周期事件（50 条环形缓冲区 + 原子写入 + fail-open）
+- messages.transform 末尾注入核心规则：利用 recency bias 对抗长会话注意力衰减，不持久化
+
+### 修复
+- 修复 plan-execute 权限弹窗不弹出：co-orchestrator 配置新增 "plan-execute": "ask" 规则
+
 ## [1.6.0] - 2026-07-23
 
 ### 新增
