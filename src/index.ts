@@ -15,6 +15,7 @@ import { PLANNER_PROMPT } from './prompts/planner';
 import { CHINESE_LANGUAGE_INSTRUCTION } from './instructions/chinese';
 import { TaskTracker } from './task-manager/tracker';
 import { PlanApprovalManager, createRequestPlanApprovalTool } from './plan-gate';
+import { BoundedPlanGateAudit } from './plan-gate-audit';
 import { ContextEngine } from './context/engine';
 import { resolveStrategy } from './context/strategy';
 import type { ContextStrategy } from './context/types';
@@ -146,12 +147,17 @@ const CoHubPlugin: Plugin = async (input, options) => {
   const promptOverrides = { ...configOverrides, ...fileOverrides };
 
   const tracker = new TaskTracker();
-  const planManager = new PlanApprovalManager();
-  const planTools = createRequestPlanApprovalTool(planManager);
 
   // ===== TUI 状态同步 =====
   const STATE_DIR = path.join(os.homedir(), '.local', 'share', 'opencode', 'storage', 'oh-my-opencode-cohub');
   const STATE_FILE = path.join(STATE_DIR, 'tracker-state.json');
+
+  // ===== PlanGate Audit =====
+  const PLAN_GATE_AUDIT_PATH = path.join(STATE_DIR, 'plan-gate-audit.json');
+  const planAudit = new BoundedPlanGateAudit(PLAN_GATE_AUDIT_PATH);
+
+  const planManager = new PlanApprovalManager(planAudit);
+  const planTools = createRequestPlanApprovalTool(planManager);
 
   // 定时写入 tracker 状态供 TUI 面板轮询
   function syncTrackerState(sessionId: string) {
@@ -380,17 +386,34 @@ const CoHubPlugin: Plugin = async (input, options) => {
     },
 
     'tool.execute.before': async (input, output) => {
-      // ===== PlanGate 可写代理门禁（在 try-catch 外，确保错误传播到 OpenCode）=====
+      // ===== PlanGate 可写代理门禁 + 审计（在 try-catch 外，确保错误传播到 OpenCode）=====
       if (input.tool === 'task') {
         const beforeArgs = (output.args ?? {}) as Record<string, unknown>;
         const beforeSubagentType = typeof beforeArgs.subagent_type === 'string' ? beforeArgs.subagent_type : '';
         if ((beforeSubagentType === 'co-fixer' || beforeSubagentType === 'co-designer')
             && !planManager.isApproved(input.sessionID)) {
+          // 审计记录：门禁拦截
+          planAudit.record({
+            event: 'task_denied',
+            session: input.sessionID?.slice(0, 20) ?? '?',
+            generation: planManager.getGeneration(input.sessionID),
+            agent: beforeSubagentType as 'co-fixer' | 'co-designer',
+            reason: 'unapproved',
+          });
           throw new Error(
             '[CoHub 方案批准门禁] 当前 session 尚未通过方案批准。\n' +
             `请先：1) 输出可验证方案 → 2) todowrite 记录 → 3) 调用 request_plan_approval 弹出确认框 → ` +
             `4) 用户在弹窗中允许后，才能委派 ${beforeSubagentType}。`,
           );
+        }
+        // 门禁通过：记录授权
+        if (beforeSubagentType === 'co-fixer' || beforeSubagentType === 'co-designer') {
+          planAudit.record({
+            event: 'task_allowed',
+            session: input.sessionID?.slice(0, 20) ?? '?',
+            generation: planManager.getGeneration(input.sessionID),
+            agent: beforeSubagentType as 'co-fixer' | 'co-designer',
+          });
         }
       }
 

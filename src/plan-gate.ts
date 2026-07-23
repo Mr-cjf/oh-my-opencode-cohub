@@ -7,6 +7,7 @@
  */
 
 import { tool } from '@opencode-ai/plugin';
+import { BoundedPlanGateAudit, type AuditEvent } from './plan-gate-audit';
 
 // ============================================================================
 // Types
@@ -31,6 +32,22 @@ interface SessionPlanState {
 export class PlanApprovalManager {
   /** sessionID → SessionPlanState */
   private sessions = new Map<string, SessionPlanState>();
+  /** 有界审计日志（可选） */
+  readonly audit?: BoundedPlanGateAudit;
+
+  /**
+   * @param audit 可选的审计日志实例
+   */
+  constructor(audit?: BoundedPlanGateAudit) {
+    this.audit = audit;
+  }
+
+  /**
+   * 获取指定 session 当前 generation（用于审计记录）。
+   */
+  getGeneration(sessionID: string): number {
+    return this.sessions.get(sessionID)?.generation ?? 0;
+  }
 
   /**
    * 观察用户消息。仅在 orchestrator session 上建立状态。
@@ -48,11 +65,22 @@ export class PlanApprovalManager {
     }
 
     const state = this.sessions.get(sessionID) ?? { generation: 0 };
+    const oldApprovedGeneration = state.approvedGeneration;
     state.generation += 1;
     // 撤销旧批准
     delete state.approvedGeneration;
     delete state.plan;
     this.sessions.set(sessionID, state);
+
+    // 审计记录：撤销旧批准（revoked 字段指明被撤销的 generation）
+    this.audit?.record({
+      event: 'revoked',
+      session: sessionID.slice(0, 20),
+      generation: state.generation,
+      revoked: oldApprovedGeneration,
+      agent: agent && agent !== 'co-orchestrator' ? agent : undefined,
+    });
+
     return true;
   }
 
@@ -74,6 +102,15 @@ export class PlanApprovalManager {
     }
     state.approvedGeneration = state.generation;
     state.plan = plan;
+
+    // 审计记录：方案批准
+    this.audit?.record({
+      event: 'approved',
+      session: sessionID.slice(0, 20),
+      generation: state.generation,
+      fileCount: plan.files.length,
+      summaryLen: plan.summary.length,
+    });
   }
 
   /**
@@ -179,28 +216,52 @@ export function createRequestPlanApprovalTool(
         ? verification.slice(0, 150) + '...'
         : verification;
 
-      // 发起原生确认框
-      await (toolContext as unknown as { ask: (input: { permission: string; patterns: string[]; always: string[]; metadata: Record<string, unknown> }) => Promise<void> }).ask({
-        permission: 'plan-execute',
-        always: [],
-        patterns: [
-          `📋 方案: ${truncatedSummary}`,
-          `📁 文件 (${files.length}个): ${truncatedFiles.join(', ')}`,
-          `🔍 验证: ${truncatedVerification}`,
-        ],
-        metadata: {
-          session_id: sessionID,
-          generation: String(planManager['sessions']?.get(sessionID)?.generation ?? 0),
-          summary,
-          file_count: String(files.length),
-        },
+      // 当前 generation
+      const currentGen = planManager.getGeneration(sessionID);
+
+      // 审计记录：请求批准
+      planManager.audit?.record({
+        event: 'approval_requested',
+        session: sessionID.slice(0, 20),
+        generation: currentGen,
+        agent: 'co-orchestrator',
+        fileCount: files.length,
+        summaryLen: summary.length,
       });
 
-      // ask 成功（用户允许）后写入批准
+      // 发起原生确认框
+      try {
+        await (toolContext as unknown as { ask: (input: { permission: string; patterns: string[]; always: string[]; metadata: Record<string, unknown> }) => Promise<void> }).ask({
+          permission: 'plan-execute',
+          always: [],
+          patterns: [
+            `📋 方案: ${truncatedSummary}`,
+            `📁 文件 (${files.length}个): ${truncatedFiles.join(', ')}`,
+            `🔍 验证: ${truncatedVerification}`,
+          ],
+          metadata: {
+            session_id: sessionID,
+            generation: String(currentGen),
+            summary,
+            file_count: String(files.length),
+          },
+        });
+      } catch (err) {
+        // 用户拒绝确认框
+        planManager.audit?.record({
+          event: 'rejected',
+          session: sessionID.slice(0, 20),
+          generation: currentGen,
+          reason: 'permission_rejected',
+        });
+        throw err;
+      }
+
+      // ask 成功（用户允许）后写入批准（approve 内部自动记录 'approved' 审计事件）
       planManager.approve(sessionID, { summary, files, verification });
 
       return (
-        `✅ 方案已批准（generation ${planManager['sessions']?.get(sessionID)?.generation ?? '?'}）。\n` +
+        `✅ 方案已批准（generation ${currentGen}）。\n` +
         `现在可以委派 @co-fixer / @co-designer 执行。\n` +
         `📋 ${summary}\n` +
         `📁 ${files.length} 个文件\n` +
