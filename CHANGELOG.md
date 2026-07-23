@@ -1,5 +1,48 @@
 # CHANGELOG
 
+## [1.7.0] - 2026-07-23
+
+### 新增
+- PlanGate 有界审计日志：记录批准生命周期事件（50 条环形缓冲区 + 原子写入 + fail-open）
+- messages.transform 末尾注入核心规则：利用 recency bias 对抗长会话注意力衰减，不持久化
+
+### 修复
+- 修复 plan-execute 权限弹窗不弹出：co-orchestrator 配置新增 "plan-execute": "ask" 规则
+
+## [1.6.0] - 2026-07-23
+
+### 新增
+- request_plan_approval 自定义工具：通过 OpenCode 原生权限确认框发起方案批准
+- PlanApprovalManager 许可租约：generation 机制，新用户消息自动撤销旧批准
+- tool.execute.before 可写代理执行门禁：未批准方案时拒绝 co-fixer/co-designer 委派
+- system.transform 动态注入 plan gate 状态，每次 LLM 请求刷新
+
+### 变更
+- orchestrator 提示词升级：todowrite 状态锁 → 方案批准门禁，覆盖范围扩展至 co-designer
+- 替代旧的 RuleInjector 周期性提醒机制（用户可见注入 → 程序化硬门禁）
+
+### 移除
+- src/rule-injector.ts：L2 周期性规则提醒注入器
+
+## [1.5.3] - 2026-07-22
+
+### 修复
+- 修复 Background Job Board "reusable by alias" 指令导致 orchestrator 误用 alias 作为 task_id，session 复用不生效。重写为正向指引（用 Session ID 列），陈述传 alias 的真实后果（静默创建新 session 而非复用）
+- 新增 task_id 防御拦截：非 ses_ 前缀的非法值在 tool.execute.before hook 中直接删除，不依赖 OpenCode 静默兜底
+
+### 变更
+- Background Job Board 输出格式重构：Active Jobs 字段重排（agent 在前，alias 后置加 alias= 标注），Reusable Sessions 改为表格格式
+- 删除 Board 中未实现的"超时恢复"指令（运行中任务无 sessionId，功能从未存在）
+- orchestrator 提示词优化：规则 3 强调"方案检查→使用 co-explorer 搜索→co-librarian 验证方案信息"
+
+### 移除
+- Board 中 "Timed-out running sessions are recoverable by alias" 指令（幻影功能）
+
+## [1.5.2] - 2026-07-22
+
+### 修复
+- 诊断日志增加自动截断：超过 50KB 保留最后 30 条，防止无限累计
+
 ## [1.5.1] - 2026-07-22
 
 ### 修复
