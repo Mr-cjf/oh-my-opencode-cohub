@@ -14,7 +14,7 @@ import { RULE_APP_PROMPT } from './prompts/rule-app';
 import { PLANNER_PROMPT } from './prompts/planner';
 import { CHINESE_LANGUAGE_INSTRUCTION } from './instructions/chinese';
 import { TaskTracker } from './task-manager/tracker';
-import { RuleInjector } from './rule-injector';
+import { PlanApprovalManager, createRequestPlanApprovalTool } from './plan-gate';
 import { ContextEngine } from './context/engine';
 import { resolveStrategy } from './context/strategy';
 import type { ContextStrategy } from './context/types';
@@ -146,7 +146,8 @@ const CoHubPlugin: Plugin = async (input, options) => {
   const promptOverrides = { ...configOverrides, ...fileOverrides };
 
   const tracker = new TaskTracker();
-  const ruleInjector = new RuleInjector();
+  const planManager = new PlanApprovalManager();
+  const planTools = createRequestPlanApprovalTool(planManager);
 
   // ===== TUI 状态同步 =====
   const STATE_DIR = path.join(os.homedir(), '.local', 'share', 'opencode', 'storage', 'oh-my-opencode-cohub');
@@ -365,8 +366,8 @@ const CoHubPlugin: Plugin = async (input, options) => {
     // 方式一：直接返回 agent 字段（HTTP 服务器模式更可靠）
     agent: agentConfigs,
 
-    // council_session 工具（多模型并行共识）
-    tool: councilTools,
+    // 工具：council_session（多模型并行共识）+ request_plan_approval（方案批准）
+    tool: { ...councilTools, ...planTools },
 
     // 方式二：config hook 再次写入（确保兼容所有模式）
     config: async (cfg: Record<string, unknown>) => {
@@ -379,10 +380,24 @@ const CoHubPlugin: Plugin = async (input, options) => {
     },
 
     'tool.execute.before': async (input, output) => {
+      // ===== PlanGate 可写代理门禁（在 try-catch 外，确保错误传播到 OpenCode）=====
+      if (input.tool === 'task') {
+        const beforeArgs = (output.args ?? {}) as Record<string, unknown>;
+        const beforeSubagentType = typeof beforeArgs.subagent_type === 'string' ? beforeArgs.subagent_type : '';
+        if ((beforeSubagentType === 'co-fixer' || beforeSubagentType === 'co-designer')
+            && !planManager.isApproved(input.sessionID)) {
+          throw new Error(
+            '[CoHub 方案批准门禁] 当前 session 尚未通过方案批准。\n' +
+            `请先：1) 输出可验证方案 → 2) todowrite 记录 → 3) 调用 request_plan_approval 弹出确认框 → ` +
+            `4) 用户在弹窗中允许后，才能委派 ${beforeSubagentType}。`,
+          );
+        }
+      }
+
       try {
         if (input.tool === 'task') {
           const args = output.args ?? {};
-          const subagentType = typeof args.subagent_type === 'string' ? args.subagent_type : undefined;
+          const subagentType = typeof args.subagent_type === 'string' ? args.subagent_type : '';
           const description = typeof args.description === 'string' ? args.description : '';
 
           // 现有：注册任务
@@ -493,8 +508,8 @@ const CoHubPlugin: Plugin = async (input, options) => {
         } else if (e.type === 'session.deleted') {
           tracker.updateByChildSessionId(sessionId, 'errored');
           syncTrackerState(tracker.currentParentSessionId);
-          // 清理规则注入器的 session 计数器
-          ruleInjector.cleanup(sessionId);
+          // 清理 plan gate 状态
+          planManager.cleanup(sessionId);
         } else if (e.type === 'session.error') {
           tracker.updateByChildSessionId(sessionId, 'errored');
           syncTrackerState(tracker.currentParentSessionId);
@@ -502,22 +517,10 @@ const CoHubPlugin: Plugin = async (input, options) => {
       } catch { /* 静默失败 */ }
     },
 
-    // ===== 周期性规则提醒注入（L2：防止长会话规则遗忘） =====
-    'chat.message': async (input, output) => {
+    // ===== PlanGate: 观察 orchestrator 用户消息，递增 generation 并撤销旧批准 =====
+    'chat.message': async (input) => {
       try {
-        // 仅对 co-orchestrator 注入规则提醒
-        if (input.agent !== 'co-orchestrator') return;
-
-        const reminder = ruleInjector.tick(input.sessionID);
-        if (reminder && output.parts && Array.isArray(output.parts)) {
-          for (let j = output.parts.length - 1; j >= 0; j--) {
-            const part = output.parts[j];
-            if (part.type === 'text') {
-              part.text += reminder;
-              break;
-            }
-          }
-        }
+        planManager.observeUserMessage(input.sessionID, input.agent);
       } catch (err) {
         console.warn('[oh-my-opencode-cohub] chat.message hook 失败:', err);
       }
@@ -548,9 +551,17 @@ const CoHubPlugin: Plugin = async (input, options) => {
       }
     },
 
-    'experimental.chat.system.transform': async (_input, output) => {
+    'experimental.chat.system.transform': async (input, output) => {
       // 将中文语言指令注入到系统提示词中
       output.system.push(CHINESE_LANGUAGE_INSTRUCTION);
+
+      // 注入 plan gate 动态状态（仅对已登记的 orchestrator session）
+      if (input.sessionID) {
+        const planGateCtx = planManager.getSystemContext(input.sessionID);
+        if (planGateCtx) {
+          output.system.push(planGateCtx);
+        }
+      }
     },
 
     dispose: async () => {

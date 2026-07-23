@@ -10,3 +10,6 @@ node_modules/
 /src/prompts/*.ts
 
 dist/
+
+# OpenCode 源码参考（不提交）
+opencode-source/
