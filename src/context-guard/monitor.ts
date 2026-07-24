@@ -12,6 +12,9 @@ export interface TriggerEvent {
   contextLimit: number;
 }
 
+/** 已计数的消息 ID（防重复累加） */
+const countedMessages = new Map<string, Set<string>>();
+
 /** 全局模型上下文缓存 */
 let modelContext: { providerId?: string; modelId?: string; contextLimit: number } = {
   contextLimit: 200_000, // 默认 200K
@@ -97,9 +100,12 @@ export function createEventHandler(config?: Partial<ContextGuardConfig>) {
         totalTokens = state.cumulativeTokens;
       }
 
-      // 更新累计值（取较大者）
-      if (totalTokens > state.cumulativeTokens) {
-        state.cumulativeTokens = totalTokens;
+      // 累积 token（每条 message.updated 的 tokens 是增量，需累加而非覆盖）
+      // 去重：同一条消息可能在会话加载时重播事件
+      if (!countedMessages.get(sessionID)?.has(messageId)) {
+        state.cumulativeTokens += totalTokens;
+        if (!countedMessages.has(sessionID)) countedMessages.set(sessionID, new Set());
+        countedMessages.get(sessionID)!.add(messageId);
       }
 
       // 回退：如果所有来源都无效，从消息内容估算
@@ -146,4 +152,9 @@ export function createEventHandler(config?: Partial<ContextGuardConfig>) {
 /** 获取当前上下文限制 */
 export function getContextLimit(): number {
   return modelContext.contextLimit;
+}
+
+/** 清理已计数消息缓存（dispose 时调用） */
+export function cleanupCountedMessages(): void {
+  countedMessages.clear();
 }

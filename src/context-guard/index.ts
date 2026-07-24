@@ -1,5 +1,5 @@
 /** 上下文卫士 - 插件入口 */
-import { createEventHandler, createChatParamsHandler, type TriggerEvent } from './monitor';
+import { createEventHandler, createChatParamsHandler, type TriggerEvent, cleanupCountedMessages } from './monitor';
 import { createMessagesTransformHandler, createChatMessageHandler, setPendingUsage } from './menu';
 import { DEFAULT_GUARD_CONFIG } from './types';
 import { cleanupStaleSessions } from './state';
@@ -69,3 +69,4 @@ export function initContextGuard(_client: unknown) {
 
 export { type ContextGuardConfig, DEFAULT_GUARD_CONFIG } from './types';
 export { cleanupStaleSessions } from './state';
+export { cleanupCountedMessages } from './monitor';

@@ -15,6 +15,7 @@ import { PLANNER_PROMPT } from './prompts/planner';
 import { GUARDIAN_PROMPT } from './prompts/guardian';
 import { initContextGuard } from './context-guard';
 import { cleanupAllStates } from './context-guard/state';
+import { cleanupCountedMessages } from './context-guard/monitor';
 import { CHINESE_LANGUAGE_INSTRUCTION } from './instructions/chinese';
 import { TaskTracker } from './task-manager/tracker';
 import { ContextEngine } from './context/engine';
@@ -572,6 +573,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
       clearInterval(cleanupTimer);
       clearInterval(contextCleanupTimer);
       cleanupAllStates();
+      cleanupCountedMessages();
     },
   };
 };
