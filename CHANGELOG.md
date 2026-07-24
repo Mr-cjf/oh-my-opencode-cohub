@@ -21,6 +21,7 @@
 ### 修复
 - event hook sessionID 路径修正（properties.info.sessionID 替代 properties.sessionID）
 - chat.message hook 改为 output.parts 直接变异（符合 SDK 类型签名）
+- 修复从 v1.6.0/v1.7.0 升级时 `opencode.json` 中的 orchestrator prompt 不被更新的问题（`registerCoHubAgents()` 新增旧版 prompt 智能迁移检测）
 
 ### 移除
 - 移除 PlanGate 门禁系统（plan-gate.ts / plan-gate-audit.ts 及测试文件）
