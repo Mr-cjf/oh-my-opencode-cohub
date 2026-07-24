@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## [1.8.0] - 2026-07-24
+
+### 新增
+- 新增 ContextGuard 上下文卫士模块：20% 阈值时主动弹出三选一菜单（自动压缩 / 会话压缩 / 分析迁移）
+- 新增 co-guardian 子代理：启发式分析会话状态，推荐最优上下文处理策略
+- CJK 中文 token 修正估算（1.8 chars/token），避免中文文本被低估 2-3 倍
+- TUI 面板新增 co-guardian agent 展示
+
+### 变更
+- 拆除 PlanGate 方案批准门禁：orchestrator 回归纯提示词 + 用户选择模式
+- Background Job Board：getBoardText 返回值类型优化，无任务时不再注入空表格
+- oracle 提示词增强：新增 @council vs @oracle 选择指南
+
+### 修复
+- event hook sessionID 路径修正（properties.info.sessionID 替代 properties.sessionID）
+- chat.message hook 改为 output.parts 直接变异（符合 SDK 类型签名）
+
+### 移除
+- 移除 PlanGate 门禁系统（plan-gate.ts / plan-gate-audit.ts 及测试文件）
+- 移除 request_plan_approval 工具
+
 ## [1.7.0] - 2026-07-23
 
 ### 新增
