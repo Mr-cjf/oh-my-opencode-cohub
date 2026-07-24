@@ -63,7 +63,7 @@ function getOhMyConfigPath(): string {
   return path.join(os.homedir(), '.config', 'opencode', 'oh-my-opencode-slim.json');
 }
 
-/** 将所有 12 个 co-* 代理注册到 opencode.json 的 agent 字段 */
+/** 将所有 13 个 co-* 代理注册到 opencode.json 的 agent 字段 */
 export function registerCoHubAgents(): { success: boolean; message: string } {
   const configPath = getOpencodeConfigPath();
   let config = readJSON(configPath);
@@ -84,6 +84,7 @@ export function registerCoHubAgents(): { success: boolean; message: string } {
     'co-rule-project': { description: '项目规范分析', mode: 'subagent', prompt: '你是规则分析代理——负责项目级规范。\n\n**职责**：读取项目根目录 `AGENTS.md`（项目级规则），结合 Orchestrator 提供的当前方案，分析是否有遗漏或冲突。返回具体的调整建议（不要笼统）。\n\n**约束**：只读，不修改文件。聚焦规则与方案的映射关系。', model: 'deepseek/deepseek-v4-flash', variant: 'medium' },
     'co-rule-app': { description: '应用规则分析', mode: 'subagent', prompt: '你是规则分析代理——负责应用规则。\n\n**职责**：读取 `.opencode/rules/*.md`（应用规则：安全、测试、数据库、Git 工作流等），结合 Orchestrator 提供的当前方案，分析是否有遗漏或冲突。返回具体的调整建议（不要笼统）。\n\n**约束**：只读，不修改文件。聚焦规则与方案的映射关系。', model: 'deepseek/deepseek-v4-flash', variant: 'medium' },
     'co-planner': { description: '方案制定', mode: 'subagent', prompt: '你是方案制定代理——负责任务分解和委派策略。\n\n**职责**：接收用户需求、信息收集结果（代码库结构、API文档等）、规范分析反馈，综合制定结构化的实现方案。\n\n**输出必须包含**：\n- 子任务列表（含依赖关系）\n- 每个子任务的委派对象（@explorer / @librarian / @fixer / @designer / @oracle / @observer）\n- 并行化策略\n- 验证步骤\n\n**约束**：只读，不修改文件。方案要具体到文件和操作粒度，不可笼统。用 `todowrite` 风格的任务列表输出。', model: 'deepseek/deepseek-v4-pro', variant: 'high' },
+    'co-guardian': { description: '上下文卫士', mode: 'subagent', prompt: '你是 Guardian——上下文卫士分析师。在上下文窗口紧张时分析会话状态，推荐最优的上下文处理策略（自动压缩/会话压缩/分析迁移）。只读分析，不修改文件。', model: 'deepseek/deepseek-v4-flash', variant: 'low' },
   };
 
   let added = 0;
@@ -122,7 +123,8 @@ export function writeDefaultConfig(): { success: boolean; message: string } {
       "co-rule-user": { model: "deepseek/deepseek-v4-flash", variant: "medium" },
       "co-rule-project": { model: "deepseek/deepseek-v4-flash", variant: "medium" },
       "co-rule-app": { model: "deepseek/deepseek-v4-flash", variant: "medium" },
-      "co-planner": { model: "deepseek/deepseek-v4-pro", variant: "high" }
+      "co-planner": { model: "deepseek/deepseek-v4-pro", variant: "high" },
+      "co-guardian": { model: "deepseek/deepseek-v4-flash", variant: "low" }
     },
     council: {
       default_preset: "default",

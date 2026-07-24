@@ -16,7 +16,7 @@ async function main() {
     const r2 = addPluginToTuiConfig();
     console.log(r2.message);
 
-    // 3. 注册所有 12 个 co-* 代理到 opencode.json 的 agent 字段
+    // 3. 注册所有 13 个 co-* 代理到 opencode.json 的 agent 字段
     const r3 = registerCoHubAgents();
     console.log(r3.message);
 
@@ -26,7 +26,7 @@ async function main() {
 
     console.log('\n✅ CoHub 安装完成！');
     console.log('   重启 OpenCode 后，TAB 选择 "co-orchestrator" 开始纯调度模式。');
-    console.log('   已注册 12 个 co-* 代理到 opencode.json 的 agent 字段。');
+    console.log('   已注册 13 个 co-* 代理到 opencode.json 的 agent 字段。');
   } else if (command === 'uninstall') {
     console.log('🧹 CoHub 卸载中...\n');
     const result = uninstallCoHub();
