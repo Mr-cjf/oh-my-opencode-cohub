@@ -1,12 +1,14 @@
 /** 上下文卫士 - 提示词模板 */
 
-/** 三选一菜单文本（注入到 chat） */
+/** 三选一 + defer 菜单文本（注入到 chat） */
 export function renderGuardMenu(
   usedTokens: number,
   contextLimit: number,
+  nextRatio: number,
   recommendation?: { option: string; confidence: number; reasoning: string },
 ): string {
   const ratio = ((usedTokens / contextLimit) * 100).toFixed(1);
+  const nextPct = (nextRatio * 100).toFixed(0);
   const recSection = recommendation
     ? `\n\n🧠 co-guardian 分析建议：\n   "${recommendation.reasoning}"\n   推荐选择：${recommendation.option}（置信度 ${(recommendation.confidence * 100).toFixed(0)}%）\n`
     : '';
@@ -19,10 +21,20 @@ export function renderGuardMenu(
     `║  1️⃣ 自动压缩 — 压缩旧消息，保留最近对话              ║`,
     `║  2️⃣ 会话压缩 — 触发 Compact Session               ║`,
     `║  3️⃣ 分析迁移 — 提取关键上下文，生成迁移文案           ║`,
+    `║  4️⃣ 稍后提醒 — 到 ${nextPct}% 时再提醒               ║`,
     `║                                                  ║`,
-    `║ 请回复数字 1、2 或 3                               ║`,
+    `║ 请回复数字 1、2、3 或 4                            ║`,
     `╚══════════════════════════════════════════════════╝`,
   ].join('\n');
+}
+
+/** 计算下一个 defer 阈值（从 DEFER_LEVELS 阶梯中取大于当前 ratio 的最小值） */
+export function nextDeferThreshold(currentRatio: number): number {
+  const LEVELS = [0.4, 0.6, 0.8];
+  for (const l of LEVELS) {
+    if (l > currentRatio + 0.01) return l;
+  }
+  return 0.9; // 最后一级：90%
 }
 
 /** 选项1执行后的确认消息 */

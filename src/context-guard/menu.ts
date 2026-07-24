@@ -1,6 +1,6 @@
 /** 上下文卫士 - 菜单注入 */
 import type { PluginInput } from '@opencode-ai/plugin';
-import { renderGuardMenu } from './prompts';
+import { renderGuardMenu, nextDeferThreshold } from './prompts';
 import { getSessionState, setSelectedOption, getCachedRecommendation } from './state';
 import type { GuardOption } from './types';
 import { executeAutoCompress } from './options/auto-compress';
@@ -51,8 +51,9 @@ export function createMessagesTransformHandler() {
       const recentMsgs = extractRecentMessages(output.messages, 30);
       const recommendation = analyzeSession(found.sessionID, recentMsgs);
 
-      // 生成菜单
-      const menu = renderGuardMenu(usage.usedTokens, usage.contextLimit, recommendation);
+      // 生成菜单（计算下一个 defer 阈值阶梯）
+      const nextRatio = nextDeferThreshold(usage.usedTokens / usage.contextLimit);
+      const menu = renderGuardMenu(usage.usedTokens, usage.contextLimit, nextRatio, recommendation);
 
       // 注入到消息末尾
       const parts = found.msg.parts as Array<Record<string, unknown>> | undefined;
@@ -79,14 +80,17 @@ function parseOption(text: string): GuardOption | undefined {
   if (t === '1' || t === '１') return 'auto-compress';
   if (t === '2' || t === '２') return 'session-compact';
   if (t === '3' || t === '３') return 'migrate';
+  if (t === '4' || t === '４') return 'defer';
   // 精确指令匹配（必须以"选1"或"1、"等形式开头）
   if (/^[选1１]\s*[.、,，]?\s*(自动压缩|选项1)/.test(t)) return 'auto-compress';
   if (/^[选2２]\s*[.、,，]?\s*(会话压缩|compact|选项2)/i.test(t)) return 'session-compact';
   if (/^[选3３]\s*[.、,，]?\s*(分析迁移|迁移|选项3)/.test(t)) return 'migrate';
+  if (/^[选4４]\s*[.、,，]?\s*(稍后|推迟|延迟|选项4)/i.test(t)) return 'defer';
   // 仅包含关键词的短消息也接受
   if (t === '自动压缩') return 'auto-compress';
   if (t === '会话压缩') return 'session-compact';
   if (t === '分析迁移') return 'migrate';
+  if (t === '稍后提醒' || t === '稍后') return 'defer';
   return undefined;
 }
 
@@ -134,6 +138,16 @@ export function createChatMessageHandler() {
         case 'migrate':
           replyText = await executeMigrate(sessionID, []);
           break;
+        case 'defer': {
+          const nextRatio = nextDeferThreshold(
+            (state.cumulativeTokens || 0) / (state.triggerContextLimit || 200_000),
+          );
+          const nextPct = (nextRatio * 100).toFixed(0);
+          state.triggered = false;
+          state.deferThreshold = nextRatio;
+          replyText = `⏸️ 已推迟提醒。下次到 ${nextPct}% 时再弹窗。`;
+          break;
+        }
       }
 
       // ✅ SDK 正确的做法：直接修改 output.parts（引用传递），运行时在 hook 返回后读取

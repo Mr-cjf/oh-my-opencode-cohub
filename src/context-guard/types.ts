@@ -1,7 +1,10 @@
 /** 上下文卫士 - 类型定义 */
 
 /** 三选一选项 */
-export type GuardOption = 'auto-compress' | 'session-compact' | 'migrate';
+export type GuardOption = 'auto-compress' | 'session-compact' | 'migrate' | 'defer';
+
+/** 轻微提醒的阈值阶梯 */
+export const DEFER_LEVELS = [0.2, 0.4, 0.6, 0.8] as const;
 
 /** co-guardian 分析推荐结果 */
 export interface GuardianRecommendation {
@@ -35,6 +38,8 @@ export interface GuardSessionState {
   cooldownRemaining: number;
   /** 用户选择的选项（选择后设置） */
   selectedOption?: GuardOption;
+  /** defer 后下次触发的阈值（比例，如 0.4） */
+  deferThreshold?: number;
   /** 触发的消息 ID（防止重复） */
   lastTriggerMessageId?: string;
 }

@@ -133,8 +133,9 @@ export function createEventHandler(config?: Partial<ContextGuardConfig>) {
         reasoningTokens,
       );
 
-      // 检查阈值
-      if (!isOverThreshold(usage, cfg.triggerRatio, cfg.tokenThreshold)) return null;
+      // 检查阈值（如果用户选了"稍后提醒"，使用 defer 后的阈值）
+      const effectiveRatio = state.deferThreshold ?? cfg.triggerRatio;
+      if (!isOverThreshold(usage, effectiveRatio, cfg.tokenThreshold)) return null;
 
       // 触发！
       markTriggered(state, messageId, estimatedTotal, modelContext.contextLimit);
