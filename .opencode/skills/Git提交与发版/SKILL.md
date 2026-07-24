@@ -49,7 +49,7 @@ context: fork
 | 12 | B | 更新 CHANGELOG.md（按 Keep a Changelog 格式） | 新增/修复/变更/移除分类 |
 | 13 | B | 提交 CHANGELOG（`docs: 更新 CHANGELOG vX.Y.Z`） | 先 docs 再 chore |
 | 14 | B | `npm version patch/minor/major`（自动更新版本号、commit、tag） | |
-| 15 | B | `git push --follow-tags` + `bunx oh-my-opencode-cohub install` 验证 | |
+| 15 | B | 确保 SSH remote → `git push --follow-tags` + `bunx oh-my-opencode-cohub install` 验证 | |
 
 ---
 
@@ -332,6 +332,8 @@ context: fork
 
 - [ ] **15.1 推送代码和 tag**：
   ```bash
+  # 确保使用 SSH remote（HTTPS 在中国大陆网络环境下经常超时）
+  git remote set-url origin git@github.com:Mr-cjf/oh-my-opencode-cohub.git
   git push --follow-tags
   ```
   - 此命令推送当前分支的所有提交 + 新创建的 tag
@@ -429,5 +431,5 @@ context: fork
 - [ ] CHANGELOG.md 是否在发版前更新？
 - [ ] 版本号是否符合 SemVer？
 - [ ] CHANGELOG 提交和版本号提交是否分开？
-- [ ] `git push --follow-tags` 是否成功？
+- [ ] SSH remote 是否已配置？`git push --follow-tags` 是否成功？
 - [ ] 发版后是否重新安装验证？
