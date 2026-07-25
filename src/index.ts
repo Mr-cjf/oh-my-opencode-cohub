@@ -291,6 +291,15 @@ const CoHubPlugin: Plugin = async (input, options) => {
     }
   }
 
+  // ===== 核心规则提取（利用 recency bias 对抗长会话注意力衰减） =====
+  const orchestratorAgent = agents.find(a => a.name === 'co-orchestrator');
+  const criticalRulesMatch = (orchestratorAgent?.config.prompt as string | undefined)?.match(
+    /<critical_rules>([\s\S]*?)<\/critical_rules>/
+  );
+  const coreRulesInjectionText = criticalRulesMatch
+    ? `\n\n--- 核心规则提醒（本轮注入，不持久化） ---\n<critical_rules>${criticalRulesMatch[1]}</critical_rules>\n--- 注入结束 ---`
+    : null;
+
   // ===== Council 初始化（无配置时使用内置默认预设） =====
   const DEFAULT_COUNCIL_CONFIG = {
     default_preset: 'default',
@@ -549,6 +558,16 @@ const CoHubPlugin: Plugin = async (input, options) => {
           const guardTransform = contextGuard['experimental.chat.messages.transform'];
           if (guardTransform) await guardTransform(_input, output);
         } catch { /* 静默 */ }
+        // 3. 注入核心规则（利用 recency bias 对抗长会话注意力衰减）
+        if (coreRulesInjectionText) {
+          for (let k = lastUserMsg.parts.length - 1; k >= 0; k--) {
+            const part = lastUserMsg.parts[k];
+            if (part.type === 'text') {
+              part.text += coreRulesInjectionText;
+              break;
+            }
+          }
+        }
       } catch (err) {
         console.warn('[oh-my-opencode-cohub] messages.transform hook 失败:', err);
       }
