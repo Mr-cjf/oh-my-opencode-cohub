@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { version } from '../../package.json';
 import { addPluginToOpenCodeConfig, addPluginToTuiConfig, registerCoHubAgents, writeDefaultConfig, uninstallCoHub } from './config-io';
 
 async function main() {
@@ -6,7 +7,7 @@ async function main() {
   const command = args[0];
 
   if (command === 'install') {
-    console.log('🚀 CoHub v1.0 安装中...\n');
+    console.log(`🚀 oh-my-opencode-cohub v${version} 安装中...\n`);
 
     // 1. 注册到 opencode.json
     const r1 = addPluginToOpenCodeConfig();
