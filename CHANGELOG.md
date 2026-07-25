@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## [1.9.1] - 2026-07-25
+
+### 修复
+- chat.message hook 回复改为追加而非清空 parts，避免 LLM API "empty content" 错误
+
 ## [1.9.0] - 2026-07-25
 
 ### 新增
