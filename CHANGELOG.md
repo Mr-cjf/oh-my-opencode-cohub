@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## [1.9.0] - 2026-07-25
+
+### 新增
+- messages.transform 末尾注入核心规则：从 orchestrator 提示词动态提取 `<critical_rules>` 并注入到消息末尾，利用 recency bias 对抗长会话注意力衰减
+
+### 变更
+- 核心规则注入采用单一事实来源：从 resolved prompt 正则提取，消除硬编码双写，用户覆盖提示词后自动同步
+
 ## [1.8.2] - 2026-07-24
 
 ### 修复
