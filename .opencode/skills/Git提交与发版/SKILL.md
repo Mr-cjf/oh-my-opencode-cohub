@@ -149,11 +149,7 @@ context: fork
 
 ### 第六步：构建检查
 
-> **强制门禁**：构建失败则终止流程。
-
-- [ ] 执行 `npm run build`
-- [ ] 检查输出：确保 `dist/` 目录生成，包含编译后的 `index.js`、`tui.js`、`cli/index.js` 及对应 `.d.ts`
-- [ ] 构建失败 → **终止流程**，提示用户修复构建错误后重试
+> **构建由 CI 在发布时自动执行**（GitHub Actions publish.yml 的 npm publish 前自动运行 `npm run build`）。本地不再要求提交前构建。
 
 ---
 
@@ -182,7 +178,7 @@ context: fork
 > 延续修复：`abc1234` 是 `def5678` 的后续修复 — 修复了xxx问题（如无则省略此行）
 
 ## 构建验证
-- `npm run build` 通过 ✓
+- CI 发布时自动构建 ✓
 
 ## 相关信息
 - 关联 issue/PR / 协作者 / 参考文档
@@ -363,7 +359,7 @@ context: fork
 1. **在集成分支上使用** → 在 master/test/dev 执行提交
 2. **子代理串行执行** → 3 个 Explore 子代理应在同一条消息中并行派发
 3. **分支起点判断错误** → 未用 `git merge-base origin/master HEAD`
-4. **提交前未构建** → `npm run build` 失败不得提交
+4. **dist/ 意外暂存** → dist/ 不应被 Git 跟踪，如意外暂存请 `git rm --cached -r dist/`
 5. **汇总表格混入无业务影响的变更** → `docs:`/`chore:`/`ci:`/`.opencode/` 目录变更不纳入
 6. **「问题」列写代码操作** → 应写业务问题，而非代码动作
 7. **延续性关系遗漏** → 延续修复不追加新行，在原行用 `→` 链式追加
@@ -424,7 +420,7 @@ context: fork
 **提交阶段：**
 - [ ] 提交信息是否符合 `<type>: <描述>` 格式？
 - [ ] 是否查看了 `git diff main...HEAD` 全量差异？
-- [ ] `npm run build` 是否通过？
+- [ ] dist/ 是否未被 Git 跟踪？（构建由 CI 负责）
 - [ ] 分支变更汇总表格是否正确继承了上次表格？
 
 **发版阶段：**
