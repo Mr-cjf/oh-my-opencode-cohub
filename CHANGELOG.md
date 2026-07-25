@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## [1.10.2] - 2026-07-25
+
+### 新增
+- 新增诊断日志工具 `src/utils/log.ts`，异常信息写入 `~/.local/share/opencode/log/oh-my-opencode-cohub.YYYYMMDD.log`，按天轮转保留 7 天
+
+### 修复
+- 修复 `messages.169: all messages must have non-empty content` 错误——消息对象 `m.info` 增加可选链、`lastUserMsg.parts` 增加数组防御、`part.text` 安全拼接、`system.transform` 加 try-catch 容错
+- 修复 `tracker label` 在 `description` 为空字符串时显示空白标签的问题
+
+### 变更
+- 所有 `throw` 异常消息统一加 `[oh-my-opencode-cohub]` 前缀，便于快速溯源
+- 12 处静默 `catch {}` 和 `console.warn` 迁移到 `appendLog` 结构化日志文件
+- `council.ts` 新增 `promptText` 空值断言防御
+- 日志工具增加 `mkdir` 兜底、UTC 时区统一、`escapeRegex` 防御
+
 ## [1.10.1] - 2026-07-25
 
 ### 修复
