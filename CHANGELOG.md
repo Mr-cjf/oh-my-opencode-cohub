@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## [1.9.3] - 2026-07-25
+
+### 移除
+- 移除 co-guardian 代理及 context-guard 上下文卫士模块（11个文件），回归精简架构
+
+### 变更
+- 代理数量从 12 个减少为 11 个
+- 移除 context-guard 全部 hooks（event/chat.params/messages.transform/chat.message）
+- CLI install 默认配置不再包含 co-guardian
+
+### 修复
+- 移除 filterEmptyMessages 幽灵消息过滤逻辑（该方案未能解决 empty content 错误）
+
 ## [1.9.2] - 2026-07-25
 
 ### 修复
