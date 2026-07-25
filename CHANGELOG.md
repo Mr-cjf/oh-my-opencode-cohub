@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## [1.9.2] - 2026-07-25
+
+### 修复
+- 修复上下文压缩产生幽灵消息（text part 全空）导致 LLM API 报 `empty content` 错误的问题，在 `messages.transform` 钩子入口添加 `filterEmptyMessages` 过滤
+
 ## [1.9.1] - 2026-07-25
 
 ### 修复
