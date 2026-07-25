@@ -3,6 +3,7 @@ import { jsx } from '@opentui/solid/jsx-runtime';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { appendLog } from './utils/log.js';
 
 /** 从用户配置文件动态读取 agent 配置 */
 const AGENT_CONFIG_FILE = path.join(os.homedir(), '.config', 'opencode', 'oh-my-opencode-cohub.json');
@@ -28,7 +29,10 @@ function loadAgentConfig(): AgentInfo[] {
         provider,
       };
     });
-  } catch { return DEFAULT_AGENTS(); }
+  } catch (err) {
+    appendLog('tui.loadAgentConfig', '读取代理配置失败，使用默认值', err);
+    return DEFAULT_AGENTS();
+  }
 }
 
 /** 硬编码兜底——cohub-state.json 未生成时使用 */
@@ -67,7 +71,10 @@ function readState(): { runningAgents: string[]; runningCount: number } | null {
   try {
     if (!fs.existsSync(STATE_FILE)) return null;
     return JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
-  } catch { return null; }
+  } catch (err) {
+    appendLog('tui.readState', '读取状态文件失败', err);
+    return null;
+  }
 }
 
 const plugin: TuiPluginModule = {

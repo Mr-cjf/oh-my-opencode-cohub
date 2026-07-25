@@ -36,7 +36,7 @@ export class TaskTracker {
     }
     const agent = args.subagent_type ?? 'unknown';
     const alias = this.alias(agent);
-    const label = typeof args.description === 'string' ? args.description : alias;
+    const label = typeof args.description === 'string' && args.description ? args.description : alias;
 
     this.jobs.set(alias, {
       alias,

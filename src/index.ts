@@ -22,6 +22,7 @@ import { createCouncilTool, CouncilManager } from './tools/council';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { appendLog } from './utils/log.js';
 
 /** 默认模型配置 */
 const DEFAULT_MODELS: Record<string, string> = {
@@ -90,14 +91,18 @@ function loadFileOverrides(projectDir?: string): PromptOverrides {
       if (!overrides[agent]?.replace && fs.existsSync(replacePath)) {
         try {
           overrides[agent] = { ...overrides[agent], replace: fs.readFileSync(replacePath, 'utf-8') };
-        } catch { /* 忽略读取错误 */ }
+        } catch (err) {
+          appendLog('loadFileOverrides', '读取replace文件失败', err);
+        }
       }
       // 检查 {agent}_append.md（追加）
       const appendPath = path.join(dir, `${agent}_append.md`);
       if (!overrides[agent]?.append && fs.existsSync(appendPath)) {
         try {
           overrides[agent] = { ...overrides[agent], append: fs.readFileSync(appendPath, 'utf-8') };
-        } catch { /* 忽略读取错误 */ }
+        } catch (err) {
+          appendLog('loadFileOverrides', '读取append文件失败', err);
+        }
       }
     }
   }
@@ -349,11 +354,15 @@ const CoHubPlugin: Plugin = async (input, options) => {
   const cleanupTimer = setInterval(() => {
     try {
       tracker.cleanupStaleJobs(STALE_TIMEOUT_MS);
-    } catch { /* 静默 */ }
+    } catch (err) {
+      appendLog('cleanupStaleJobs', '定时清理过期任务失败', err);
+    }
   }, 30_000);
 
   const contextCleanupTimer = setInterval(() => {
-    try { contextEngine.cleanupStaleDependencies(); } catch {}
+    try { contextEngine.cleanupStaleDependencies(); } catch (err) {
+      appendLog('contextCleanupTimer', '定时清理上下文失败', err);
+    }
   }, 60_000);
 
   // ===== 构建 agent 对象（供直接返回 + config hook 双重注册） =====
@@ -382,7 +391,9 @@ const CoHubPlugin: Plugin = async (input, options) => {
       for (const [name, config] of Object.entries(agentConfigs)) {
         c.agent[name] = config;
       }
-      try { fs.writeFileSync(path.join(STATE_DIR, 'config-hook-ran.json'), JSON.stringify({ ran: true, count: agents.length })); } catch {}
+      try { fs.writeFileSync(path.join(STATE_DIR, 'config-hook-ran.json'), JSON.stringify({ ran: true, count: agents.length })); } catch (err) {
+        appendLog('config', '双重注册写入文件失败', err);
+      }
     },
 
     'tool.execute.before': async (input, output) => {
@@ -458,7 +469,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
           }
         }
       } catch (err) {
-        console.warn('[oh-my-opencode-cohub] tool.execute.before hook 失败:', err);
+        appendLog('tool.execute.before', 'hook 失败', err);
       }
     },
 
@@ -478,7 +489,9 @@ const CoHubPlugin: Plugin = async (input, options) => {
           tracker.updateAfterTask(input.sessionID, 'completed', childSessionId);
           syncTrackerState(input.sessionID ?? '');
         }
-      } catch { /* 静默失败 */ }
+      } catch (err) {
+        appendLog('tool.execute.after', 'hook 失败', err);
+      }
     },
 
     // 🆕 监听 session 事件 — 背景任务完成时更新状态
@@ -504,7 +517,9 @@ const CoHubPlugin: Plugin = async (input, options) => {
           tracker.updateByChildSessionId(sessionId, 'errored');
           syncTrackerState(tracker.currentParentSessionId);
         }
-      } catch { /* 静默失败 */ }
+      } catch (err) {
+        appendLog('event', '事件处理失败', err);
+      }
     },
 
     // 🆕 注入 Background Job Board
@@ -517,7 +532,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
         let sessionID: string | undefined;
         for (let i = output.messages.length - 1; i >= 0; i--) {
           const m = output.messages[i];
-          if (m.info.role === 'user') {
+          if (m.info?.role === 'user') {
             lastUserMsg = m;
             sessionID = m.info?.sessionID as string | undefined;
             break;
@@ -526,13 +541,16 @@ const CoHubPlugin: Plugin = async (input, options) => {
 
         if (!lastUserMsg) return;
 
+        // ↓ 新增：防御 parts 不存在的情况
+        if (!lastUserMsg.parts || !Array.isArray(lastUserMsg.parts)) return;
+
         // 1. 注入 Background Job Board
         const board = tracker.getBoardText();
         if (board) {
           for (let j = lastUserMsg.parts.length - 1; j >= 0; j--) {
             const part = lastUserMsg.parts[j];
             if (part.type === 'text') {
-              part.text += '\n\n' + board;
+              part.text = (part.text || '') + '\n\n' + board;
               break;
             }
           }
@@ -542,19 +560,25 @@ const CoHubPlugin: Plugin = async (input, options) => {
           for (let k = lastUserMsg.parts.length - 1; k >= 0; k--) {
             const part = lastUserMsg.parts[k];
             if (part.type === 'text') {
-              part.text += coreRulesInjectionText;
+              part.text = (part.text || '') + coreRulesInjectionText;
               break;
             }
           }
         }
       } catch (err) {
-        console.warn('[oh-my-opencode-cohub] messages.transform hook 失败:', err);
+        appendLog('messages.transform', 'hook 失败', err);
       }
     },
 
     'experimental.chat.system.transform': async (input, output) => {
       // 将中文语言指令注入到系统提示词中
-      output.system.push(CHINESE_LANGUAGE_INSTRUCTION);
+      try {
+        if (output?.system && Array.isArray(output.system)) {
+          output.system.push(CHINESE_LANGUAGE_INSTRUCTION);
+        }
+      } catch (err) {
+        appendLog('system.transform', 'hook 失败', err);
+      }
     },
 
     dispose: async () => {
