@@ -346,6 +346,22 @@ const CoHubPlugin: Plugin = async (input, options) => {
     return undefined;
   }
 
+  /**
+   * 过滤掉所有 text part 内容均为空的幽灵消息
+   * OpenCode 上下文压缩可能产生 parts 中 text 全空的消息，这些会导致 LLM API 报错
+   */
+  function filterEmptyMessages<T extends { parts?: Array<{ type?: string; text?: string }> }>(messages: T[]): T[] {
+    return messages.filter(msg => {
+      const parts = msg.parts;
+      if (!parts || parts.length === 0) return false; // 完全没有 parts 的消息移除
+      // 如果有至少一个 text part 有非空内容，保留；如果有非 text part（如 tool），也保留
+      return parts.some(p => {
+        if (p.type === 'text') return (p.text ?? '').trim().length > 0;
+        return true; // tool 等其他类型的 part 视为有内容
+      });
+    });
+  }
+
   // ===== 辅助：从 event 中安全提取 sessionId =====
   function extractSessionIdFromEvent(props: unknown): string | undefined {
     if (!props || typeof props !== 'object') return undefined;
@@ -527,6 +543,9 @@ const CoHubPlugin: Plugin = async (input, options) => {
     'experimental.chat.messages.transform': async (_input, output) => {
       try {
         if (!output.messages || !Array.isArray(output.messages)) return;
+
+        // 过滤上下文压缩产生的幽灵消息（避免 LLM API "empty content" 错误）
+        output.messages = filterEmptyMessages(output.messages);
 
         // 从最后一条 user 消息提取 sessionID
         let lastUserMsg: (typeof output.messages)[number] | undefined;
