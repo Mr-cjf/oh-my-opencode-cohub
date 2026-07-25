@@ -12,10 +12,6 @@ import { RULE_USER_PROMPT } from './prompts/rule-user';
 import { RULE_PROJECT_PROMPT } from './prompts/rule-project';
 import { RULE_APP_PROMPT } from './prompts/rule-app';
 import { PLANNER_PROMPT } from './prompts/planner';
-import { GUARDIAN_PROMPT } from './prompts/guardian';
-import { initContextGuard } from './context-guard';
-import { cleanupAllStates } from './context-guard/state';
-import { cleanupCountedMessages } from './context-guard/monitor';
 import { CHINESE_LANGUAGE_INSTRUCTION } from './instructions/chinese';
 import { TaskTracker } from './task-manager/tracker';
 import { ContextEngine } from './context/engine';
@@ -41,7 +37,6 @@ const DEFAULT_MODELS: Record<string, string> = {
   'rule-project': 'deepseek/deepseek-v4-flash',
   'rule-app': 'deepseek/deepseek-v4-flash',
   planner: 'deepseek/deepseek-v4-pro',
-  guardian: 'deepseek/deepseek-v4-flash',
 };
 
 /** 中文提示词映射表 */
@@ -58,7 +53,6 @@ const CHINESE_PROMPTS: Record<string, string> = {
   'co-rule-project': RULE_PROJECT_PROMPT,
   'co-rule-app': RULE_APP_PROMPT,
   'co-planner': PLANNER_PROMPT,
-  'co-guardian': GUARDIAN_PROMPT,
 };
 
 /** 提示词覆盖映射 */
@@ -78,7 +72,7 @@ function loadFileOverrides(projectDir?: string): PromptOverrides {
   const agentNames = [
     'co-orchestrator', 'co-oracle', 'co-librarian', 'co-explorer',
     'co-designer', 'co-fixer', 'co-observer', 'co-council',
-    'co-rule-user', 'co-rule-project', 'co-rule-app', 'co-planner', 'co-guardian',
+    'co-rule-user', 'co-rule-project', 'co-rule-app', 'co-planner',
   ];
 
   const searchDirs: string[] = [];
@@ -259,11 +253,6 @@ const CoHubPlugin: Plugin = async (input, options) => {
       description: '方案制定——综合需求+信息+规范输出任务分解',
       config: { mode: 'subagent', model: 'deepseek/deepseek-v4-pro', variant: 'high', prompt: PLANNER_PROMPT },
     },
-    {
-      name: 'co-guardian',
-      description: '上下文卫士——分析会话状态并推荐上下文处理策略',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: GUARDIAN_PROMPT },
-    },
   ];
 
   // ===== 加载用户配置覆盖 =====
@@ -322,9 +311,6 @@ const CoHubPlugin: Plugin = async (input, options) => {
   const councilManager = new CouncilManager(input.client, input.directory, councilConfig);
   const councilTools = createCouncilTool(input, councilManager);
 
-  // ===== 初始化上下文卫士 =====
-  const contextGuard = initContextGuard(input.client);
-
   syncAgentConfig();  // 启动时立即写入 agent 配置供 TUI 面板读取
 
   // ===== 辅助：从 tool output 中提取子任务 session ID =====
@@ -344,22 +330,6 @@ const CoHubPlugin: Plugin = async (input, options) => {
     const m = text.match(/\b(session|task)[_\s]?(?:id|ID)[:\s]+(\S+)/i);
     if (m) return m[2];
     return undefined;
-  }
-
-  /**
-   * 过滤掉所有 text part 内容均为空的幽灵消息
-   * OpenCode 上下文压缩可能产生 parts 中 text 全空的消息，这些会导致 LLM API 报错
-   */
-  function filterEmptyMessages<T extends { parts?: Array<{ type?: string; text?: string }> }>(messages: T[]): T[] {
-    return messages.filter(msg => {
-      const parts = msg.parts;
-      if (!parts || parts.length === 0) return false; // 完全没有 parts 的消息移除
-      // 如果有至少一个 text part 有非空内容，保留；如果有非 text part（如 tool），也保留
-      return parts.some(p => {
-        if (p.type === 'text') return (p.text ?? '').trim().length > 0;
-        return true; // tool 等其他类型的 part 视为有内容
-      });
-    });
   }
 
   // ===== 辅助：从 event 中安全提取 sessionId =====
@@ -513,8 +483,6 @@ const CoHubPlugin: Plugin = async (input, options) => {
 
     // 🆕 监听 session 事件 — 背景任务完成时更新状态
     event: async (input) => {
-      // 上下文卫士：先处理 token 监控
-      try { await contextGuard.event(input); } catch { /* 静默 */ }
       try {
         const e = input.event as { type: string; properties?: unknown };
         const sessionId = extractSessionIdFromEvent(e.properties);
@@ -544,9 +512,6 @@ const CoHubPlugin: Plugin = async (input, options) => {
       try {
         if (!output.messages || !Array.isArray(output.messages)) return;
 
-        // 过滤上下文压缩产生的幽灵消息（避免 LLM API "empty content" 错误）
-        output.messages = filterEmptyMessages(output.messages);
-
         // 从最后一条 user 消息提取 sessionID
         let lastUserMsg: (typeof output.messages)[number] | undefined;
         let sessionID: string | undefined;
@@ -572,11 +537,6 @@ const CoHubPlugin: Plugin = async (input, options) => {
             }
           }
         }
-        // 上下文卫士：注入三选一菜单
-        try {
-          const guardTransform = contextGuard['experimental.chat.messages.transform'];
-          if (guardTransform) await guardTransform(_input, output);
-        } catch { /* 静默 */ }
         // 3. 注入核心规则（利用 recency bias 对抗长会话注意力衰减）
         if (coreRulesInjectionText) {
           for (let k = lastUserMsg.parts.length - 1; k >= 0; k--) {
@@ -597,21 +557,9 @@ const CoHubPlugin: Plugin = async (input, options) => {
       output.system.push(CHINESE_LANGUAGE_INSTRUCTION);
     },
 
-    // ===== 上下文卫士 hooks =====
-    'chat.params': async (input: unknown) => {
-      try { await contextGuard['chat.params'](input); } catch {}
-    },
-    'chat.message': async (input: unknown, output: unknown) => {
-      try {
-        await contextGuard['chat.message'](input, output);
-      } catch {}
-    },
-
     dispose: async () => {
       clearInterval(cleanupTimer);
       clearInterval(contextCleanupTimer);
-      cleanupAllStates();
-      cleanupCountedMessages();
     },
   };
 };

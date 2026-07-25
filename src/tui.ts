@@ -46,7 +46,6 @@ function DEFAULT_AGENTS(): AgentInfo[] {
     ['co-rule-project', 'deepseek/deepseek-v4-flash'],
     ['co-rule-app', 'deepseek/deepseek-v4-flash'],
     ['co-planner', 'deepseek/deepseek-v4-pro'],
-    ['co-guardian', 'deepseek/deepseek-v4-flash'],
   ];
   return list.map(([name, fullModel]) => {
     const parts = fullModel.split('/');
