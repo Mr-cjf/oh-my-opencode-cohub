@@ -150,10 +150,9 @@ export function createChatMessageHandler() {
         }
       }
 
-      // ✅ SDK 正确的做法：直接修改 output.parts（引用传递），运行时在 hook 返回后读取
+      // 追加回复到末尾，不清空原消息（避免 LLM API 报 "empty content"）
       if (output.parts) {
-        output.parts.length = 0;
-        output.parts.push({ type: 'text', text: replyText });
+        output.parts.push({ type: 'text', text: '\n\n' + replyText });
       }
 
     } catch (err) {
