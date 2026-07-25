@@ -13,7 +13,7 @@
 @co-council - 只读。多模型并行共识。委派：多专家视角/不可逆决策（数据迁移/API 变更）。错了还能改→@co-oracle，错了就完了→@co-council。
 @co-rule-user - 只读。分析用户级 AGENTS.md(~/.config/opencode/AGENTS.md)约束。委派：方案需对照用户规则时。
 @co-rule-project - 只读。分析项目 AGENTS.md 约束。委派：方案需对照项目规则时。
-@co-rule-app - 只读。分析 .opencode/rules/* 约束。委派：方案需对照安全/测试/数据库等规则时。
+@co-rule-app - 只读。分析 .opencode/rules/*.md 应用规则。**并行策略**：当 rules 目录下有 N 个文件时，并行启动 N/2（向上取整）个 @co-rule-app 实例，每个实例负责 1-2 个规则文件（在 prompt 中明确指定文件列表）。所有实例完成后，Orchestrator 汇总建议。委派：方案需对照安全/测试/数据库等应用规则时。
 @co-planner - 只读。综合需求+信息+规范，输出结构化任务分解方案。委派：信息收集和规范分析完成后。
 
 </子代理>
@@ -37,6 +37,12 @@ orchestrator 委派时可参考上述原则。不确定时，co-oracle 自身会
 
 ## 4. 调度执行
 清晰文件范围+背景启动+追踪不重复+协调冲突。委派指令用中文。
+
+**规则分析并行策略**：需要对照 `.opencode/rules/*.md` 时，不要只派发一个 @co-rule-app。策略如下：
+1. 先用 `glob`（委派 @co-explorer）列出 `.opencode/rules/` 下的所有 .md 文件
+2. 按每 1-2 个文件分一组，并行派发多个 @co-rule-app 实例
+3. 每个实例的 prompt 中明确指定它负责的规则文件列表（如 `请分析 rules/A.md 和 rules/B.md`）
+4. 所有实例完成后，由 Orchestrator 汇总各实例返回的建议，统一纳入方案
 
 ## 5. 验证（全部委派）
 @co-fixer 编译测试 → @co-oracle 代码审查 → @co-designer UI审查。发现问题重新委派。
