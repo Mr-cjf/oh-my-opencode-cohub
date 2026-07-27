@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { version } from '../../package.json';
 import { addPluginToOpenCodeConfig, addPluginToTuiConfig, registerCoHubAgents, writeDefaultConfig, uninstallCoHub } from './config-io';
 
 async function main() {
@@ -6,7 +7,7 @@ async function main() {
   const command = args[0];
 
   if (command === 'install') {
-    console.log('🚀 CoHub v1.0 安装中...\n');
+    console.log(`🚀 oh-my-opencode-cohub v${version} 安装中...\n`);
 
     // 1. 注册到 opencode.json
     const r1 = addPluginToOpenCodeConfig();
@@ -16,7 +17,7 @@ async function main() {
     const r2 = addPluginToTuiConfig();
     console.log(r2.message);
 
-    // 3. 注册所有 12 个 co-* 代理到 opencode.json 的 agent 字段
+    // 3. 注册所有 13 个 co-* 代理到 opencode.json 的 agent 字段
     const r3 = registerCoHubAgents();
     console.log(r3.message);
 
@@ -26,7 +27,7 @@ async function main() {
 
     console.log('\n✅ CoHub 安装完成！');
     console.log('   重启 OpenCode 后，TAB 选择 "co-orchestrator" 开始纯调度模式。');
-    console.log('   已注册 12 个 co-* 代理到 opencode.json 的 agent 字段。');
+    console.log('   已注册 13 个 co-* 代理到 opencode.json 的 agent 字段。');
   } else if (command === 'uninstall') {
     console.log('🧹 CoHub 卸载中...\n');
     const result = uninstallCoHub();

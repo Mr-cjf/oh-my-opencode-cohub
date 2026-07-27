@@ -36,7 +36,7 @@ export class TaskTracker {
     }
     const agent = args.subagent_type ?? 'unknown';
     const alias = this.alias(agent);
-    const label = typeof args.description === 'string' ? args.description : alias;
+    const label = typeof args.description === 'string' && args.description ? args.description : alias;
 
     this.jobs.set(alias, {
       alias,
@@ -97,7 +97,7 @@ export class TaskTracker {
   /**
    * 生成 Background Job Board 文本
    */
-  getBoardText(parentSessionId?: string): string | null {
+  getBoardText(parentSessionId?: string): string {
     const pid = parentSessionId || this._currentParentSessionId;
     const activeJobs: JobRecord[] = [];
     const reusableJobs: JobRecord[] = [];
@@ -111,8 +111,37 @@ export class TaskTracker {
       }
     }
 
-    if (activeJobs.length === 0 && reusableJobs.length === 0) return null;
+    // 完全空态：什么都不注入
+    if (activeJobs.length === 0 && reusableJobs.length === 0) return '';
 
+    // 只有可复用 session，无活跃任务：返回极简一行文本
+    if (activeJobs.length === 0) {
+      const abbrMap: Record<string, string> = {
+        'co-explorer': 'co-exp',
+        'co-oracle': 'co-ora',
+        'co-fixer': 'co-fix',
+        'co-planner': 'co-pln',
+        'co-designer': 'co-des',
+        'co-librarian': 'co-lib',
+        'co-observer': 'co-obs',
+        'co-council': 'co-cnl',
+      };
+      const abbreviate = (agent: string): string =>
+        abbrMap[agent] ?? (agent.startsWith('co-rule-') ? 'co-rul' : agent);
+
+      const maxShow = 8;
+      const shown = reusableJobs.slice(0, maxShow);
+      const extra = reusableJobs.length - maxShow;
+
+      const parts = shown.map(j => `${j.sessionId}(${abbreviate(j.agent)})`);
+      let text = '复用: ' + parts.join(' ');
+      if (extra > 0) {
+        text += ` …及 ${extra} 个`;
+      }
+      return text;
+    }
+
+    // 有活跃任务：保持现有完整格式
     const lines: string[] = [];
     lines.push('### Background Job Board');
     lines.push('SENTINEL: background-job-board-v2');

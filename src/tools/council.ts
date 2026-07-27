@@ -8,6 +8,7 @@ import { tool } from '@opencode-ai/plugin';
 import type { PluginInput } from '@opencode-ai/plugin';
 import type { createOpencodeClient } from '@opencode-ai/sdk';
 import type { TextPart, ReasoningPart } from '@opencode-ai/sdk';
+import { appendLog } from '../utils/log.js';
 
 // zod access via tool.schema (same pattern as slim)
 const z = tool.schema;
@@ -97,8 +98,8 @@ async function abortSession(
 ): Promise<void> {
   try {
     await client.session.abort({ path: { id: sessionId } });
-  } catch {
-    // silent — best effort cleanup
+  } catch (err) {
+    appendLog('abortSession', '中止会话失败', err);
   }
 }
 
@@ -137,7 +138,7 @@ async function promptWithTimeout(
       racers.push(
         new Promise((_, reject) => {
           timer = setTimeout(() => {
-            reject(new OperationTimeoutError(`Prompt timed out after ${timeoutMs}ms`));
+            reject(new OperationTimeoutError(`[oh-my-opencode-cohub] Prompt timed out after ${timeoutMs}ms`));
           }, timeoutMs);
         }),
       );
@@ -482,7 +483,7 @@ export class CouncilManager {
   }): Promise<string> {
     const modelRef = parseModelReference(options.model);
     if (!modelRef) {
-      throw new Error(`Invalid model format: ${options.model}`);
+      throw new Error(`[oh-my-opencode-cohub] Invalid model format: ${options.model}`);
     }
 
     let sessionId: string | undefined;
@@ -498,11 +499,14 @@ export class CouncilManager {
       });
 
       if (!session.data?.id) {
-        throw new Error('Failed to create session');
+        throw new Error('[oh-my-opencode-cohub] Failed to create session');
       }
       sessionId = session.data.id;
 
       // ---- prompt the child session (read-only tools) ----
+      if (!options.promptText) {
+        throw new Error('[oh-my-opencode-cohub] PromptText is empty');
+      }
       const promptBody: {
         agent?: string;
         model: { providerID: string; modelID: string };
@@ -537,7 +541,7 @@ export class CouncilManager {
       // ---- extract response ----
       const extraction = await extractSessionResult(this.client, sessionId);
       if (extraction.empty) {
-        throw new Error('Empty response from provider');
+        throw new Error('[oh-my-opencode-cohub] Empty response from provider');
       }
 
       return extraction.text;
@@ -595,7 +599,7 @@ export function createCouncilTool(
       const callingAgent = toolContext.agent;
       if (callingAgent && !allowedAgents.includes(callingAgent)) {
         throw new Error(
-          `Council sessions can only be invoked by the co-council agent. Current agent: ${callingAgent}`,
+          `[oh-my-opencode-cohub] Council sessions can only be invoked by the co-council agent. Current agent: ${callingAgent}`,
         );
       }
 

@@ -14,8 +14,6 @@ import { RULE_APP_PROMPT } from './prompts/rule-app';
 import { PLANNER_PROMPT } from './prompts/planner';
 import { CHINESE_LANGUAGE_INSTRUCTION } from './instructions/chinese';
 import { TaskTracker } from './task-manager/tracker';
-import { PlanApprovalManager, createRequestPlanApprovalTool } from './plan-gate';
-import { BoundedPlanGateAudit } from './plan-gate-audit';
 import { ContextEngine } from './context/engine';
 import { resolveStrategy } from './context/strategy';
 import type { ContextStrategy } from './context/types';
@@ -24,6 +22,7 @@ import { createCouncilTool, CouncilManager } from './tools/council';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { appendLog } from './utils/log.js';
 
 /** 默认模型配置 */
 const DEFAULT_MODELS: Record<string, string> = {
@@ -92,14 +91,18 @@ function loadFileOverrides(projectDir?: string): PromptOverrides {
       if (!overrides[agent]?.replace && fs.existsSync(replacePath)) {
         try {
           overrides[agent] = { ...overrides[agent], replace: fs.readFileSync(replacePath, 'utf-8') };
-        } catch { /* 忽略读取错误 */ }
+        } catch (err) {
+          appendLog('loadFileOverrides', '读取replace文件失败', err);
+        }
       }
       // 检查 {agent}_append.md（追加）
       const appendPath = path.join(dir, `${agent}_append.md`);
       if (!overrides[agent]?.append && fs.existsSync(appendPath)) {
         try {
           overrides[agent] = { ...overrides[agent], append: fs.readFileSync(appendPath, 'utf-8') };
-        } catch { /* 忽略读取错误 */ }
+        } catch (err) {
+          appendLog('loadFileOverrides', '读取append文件失败', err);
+        }
       }
     }
   }
@@ -152,13 +155,6 @@ const CoHubPlugin: Plugin = async (input, options) => {
   const STATE_DIR = path.join(os.homedir(), '.local', 'share', 'opencode', 'storage', 'oh-my-opencode-cohub');
   const STATE_FILE = path.join(STATE_DIR, 'tracker-state.json');
 
-  // ===== PlanGate Audit =====
-  const PLAN_GATE_AUDIT_PATH = path.join(STATE_DIR, 'plan-gate-audit.json');
-  const planAudit = new BoundedPlanGateAudit(PLAN_GATE_AUDIT_PATH);
-
-  const planManager = new PlanApprovalManager(planAudit);
-  const planTools = createRequestPlanApprovalTool(planManager);
-
   // 定时写入 tracker 状态供 TUI 面板轮询
   function syncTrackerState(sessionId: string) {
     try {
@@ -202,7 +198,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
   const agents = [
     {
       name: 'co-orchestrator',
-      config: { mode: 'primary', model: 'deepseek/deepseek-v4-pro', variant: 'max', prompt: ORCHESTRATOR_PROMPT + '\n\n' + CHINESE_LANGUAGE_INSTRUCTION },
+      config: { mode: 'primary', model: 'deepseek/deepseek-v4-pro', variant: 'max', prompt: ORCHESTRATOR_PROMPT },
     },
     {
       name: 'co-oracle',
@@ -289,6 +285,15 @@ const CoHubPlugin: Plugin = async (input, options) => {
     }
   }
 
+  // ===== 核心规则提取（利用 recency bias 对抗长会话注意力衰减） =====
+  const orchestratorAgent = agents.find(a => a.name === 'co-orchestrator');
+  const criticalRulesMatch = (orchestratorAgent?.config.prompt as string | undefined)?.match(
+    /<critical_rules>([\s\S]*?)<\/critical_rules>/
+  );
+  const coreRulesInjectionText = criticalRulesMatch
+    ? `\n\n--- 核心规则提醒（本轮注入，不持久化） ---\n<critical_rules>${criticalRulesMatch[1]}</critical_rules>\n--- 注入结束 ---`
+    : null;
+
   // ===== Council 初始化（无配置时使用内置默认预设） =====
   const DEFAULT_COUNCIL_CONFIG = {
     default_preset: 'default',
@@ -349,11 +354,15 @@ const CoHubPlugin: Plugin = async (input, options) => {
   const cleanupTimer = setInterval(() => {
     try {
       tracker.cleanupStaleJobs(STALE_TIMEOUT_MS);
-    } catch { /* 静默 */ }
+    } catch (err) {
+      appendLog('cleanupStaleJobs', '定时清理过期任务失败', err);
+    }
   }, 30_000);
 
   const contextCleanupTimer = setInterval(() => {
-    try { contextEngine.cleanupStaleDependencies(); } catch {}
+    try { contextEngine.cleanupStaleDependencies(); } catch (err) {
+      appendLog('contextCleanupTimer', '定时清理上下文失败', err);
+    }
   }, 60_000);
 
   // ===== 构建 agent 对象（供直接返回 + config hook 双重注册） =====
@@ -372,8 +381,8 @@ const CoHubPlugin: Plugin = async (input, options) => {
     // 方式一：直接返回 agent 字段（HTTP 服务器模式更可靠）
     agent: agentConfigs,
 
-    // 工具：council_session（多模型并行共识）+ request_plan_approval（方案批准）
-    tool: { ...councilTools, ...planTools },
+    // 工具：council_session（多模型并行共识）
+    tool: councilTools,
 
     // 方式二：config hook 再次写入（确保兼容所有模式）
     config: async (cfg: Record<string, unknown>) => {
@@ -382,41 +391,12 @@ const CoHubPlugin: Plugin = async (input, options) => {
       for (const [name, config] of Object.entries(agentConfigs)) {
         c.agent[name] = config;
       }
-      try { fs.writeFileSync(path.join(STATE_DIR, 'config-hook-ran.json'), JSON.stringify({ ran: true, count: agents.length })); } catch {}
+      try { fs.writeFileSync(path.join(STATE_DIR, 'config-hook-ran.json'), JSON.stringify({ ran: true, count: agents.length })); } catch (err) {
+        appendLog('config', '双重注册写入文件失败', err);
+      }
     },
 
     'tool.execute.before': async (input, output) => {
-      // ===== PlanGate 可写代理门禁 + 审计（在 try-catch 外，确保错误传播到 OpenCode）=====
-      if (input.tool === 'task') {
-        const beforeArgs = (output.args ?? {}) as Record<string, unknown>;
-        const beforeSubagentType = typeof beforeArgs.subagent_type === 'string' ? beforeArgs.subagent_type : '';
-        if ((beforeSubagentType === 'co-fixer' || beforeSubagentType === 'co-designer')
-            && !planManager.isApproved(input.sessionID)) {
-          // 审计记录：门禁拦截
-          planAudit.record({
-            event: 'task_denied',
-            session: input.sessionID?.slice(0, 20) ?? '?',
-            generation: planManager.getGeneration(input.sessionID),
-            agent: beforeSubagentType as 'co-fixer' | 'co-designer',
-            reason: 'unapproved',
-          });
-          throw new Error(
-            '[CoHub 方案批准门禁] 当前 session 尚未通过方案批准。\n' +
-            `请先：1) 输出可验证方案 → 2) todowrite 记录 → 3) 调用 request_plan_approval 弹出确认框 → ` +
-            `4) 用户在弹窗中允许后，才能委派 ${beforeSubagentType}。`,
-          );
-        }
-        // 门禁通过：记录授权
-        if (beforeSubagentType === 'co-fixer' || beforeSubagentType === 'co-designer') {
-          planAudit.record({
-            event: 'task_allowed',
-            session: input.sessionID?.slice(0, 20) ?? '?',
-            generation: planManager.getGeneration(input.sessionID),
-            agent: beforeSubagentType as 'co-fixer' | 'co-designer',
-          });
-        }
-      }
-
       try {
         if (input.tool === 'task') {
           const args = output.args ?? {};
@@ -489,7 +469,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
           }
         }
       } catch (err) {
-        console.warn('[oh-my-opencode-cohub] tool.execute.before hook 失败:', err);
+        appendLog('tool.execute.before', 'hook 失败', err);
       }
     },
 
@@ -509,7 +489,9 @@ const CoHubPlugin: Plugin = async (input, options) => {
           tracker.updateAfterTask(input.sessionID, 'completed', childSessionId);
           syncTrackerState(input.sessionID ?? '');
         }
-      } catch { /* 静默失败 */ }
+      } catch (err) {
+        appendLog('tool.execute.after', 'hook 失败', err);
+      }
     },
 
     // 🆕 监听 session 事件 — 背景任务完成时更新状态
@@ -531,25 +513,16 @@ const CoHubPlugin: Plugin = async (input, options) => {
         } else if (e.type === 'session.deleted') {
           tracker.updateByChildSessionId(sessionId, 'errored');
           syncTrackerState(tracker.currentParentSessionId);
-          // 清理 plan gate 状态
-          planManager.cleanup(sessionId);
         } else if (e.type === 'session.error') {
           tracker.updateByChildSessionId(sessionId, 'errored');
           syncTrackerState(tracker.currentParentSessionId);
         }
-      } catch { /* 静默失败 */ }
-    },
-
-    // ===== PlanGate: 观察 orchestrator 用户消息，递增 generation 并撤销旧批准 =====
-    'chat.message': async (input) => {
-      try {
-        planManager.observeUserMessage(input.sessionID, input.agent);
       } catch (err) {
-        console.warn('[oh-my-opencode-cohub] chat.message hook 失败:', err);
+        appendLog('event', '事件处理失败', err);
       }
     },
 
-    // 🆕 注入 Background Job Board + PlanGate 核心规则
+    // 🆕 注入 Background Job Board
     'experimental.chat.messages.transform': async (_input, output) => {
       try {
         if (!output.messages || !Array.isArray(output.messages)) return;
@@ -559,7 +532,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
         let sessionID: string | undefined;
         for (let i = output.messages.length - 1; i >= 0; i--) {
           const m = output.messages[i];
-          if (m.info.role === 'user') {
+          if (m.info?.role === 'user') {
             lastUserMsg = m;
             sessionID = m.info?.sessionID as string | undefined;
             break;
@@ -568,44 +541,43 @@ const CoHubPlugin: Plugin = async (input, options) => {
 
         if (!lastUserMsg) return;
 
+        // ↓ 新增：防御 parts 不存在的情况
+        if (!lastUserMsg.parts || !Array.isArray(lastUserMsg.parts)) return;
+
         // 1. 注入 Background Job Board
         const board = tracker.getBoardText();
         if (board) {
           for (let j = lastUserMsg.parts.length - 1; j >= 0; j--) {
             const part = lastUserMsg.parts[j];
             if (part.type === 'text') {
-              part.text += '\n\n' + board;
+              part.text = (part.text || '') + '\n\n' + board;
               break;
             }
           }
         }
-
-        // 2. 注入 PlanGate 核心规则（利用 recency bias 对抗注意力衰减）
-        const planInject = sessionID ? planManager.getInjectionText(sessionID) : null;
-        if (planInject) {
-          for (let j = lastUserMsg.parts.length - 1; j >= 0; j--) {
-            const part = lastUserMsg.parts[j];
+        // 3. 注入核心规则（利用 recency bias 对抗长会话注意力衰减）
+        if (coreRulesInjectionText) {
+          for (let k = lastUserMsg.parts.length - 1; k >= 0; k--) {
+            const part = lastUserMsg.parts[k];
             if (part.type === 'text') {
-              part.text += planInject;
+              part.text = (part.text || '') + coreRulesInjectionText;
               break;
             }
           }
         }
       } catch (err) {
-        console.warn('[oh-my-opencode-cohub] messages.transform hook 失败:', err);
+        appendLog('messages.transform', 'hook 失败', err);
       }
     },
 
     'experimental.chat.system.transform': async (input, output) => {
       // 将中文语言指令注入到系统提示词中
-      output.system.push(CHINESE_LANGUAGE_INSTRUCTION);
-
-      // 注入 plan gate 动态状态（仅对已登记的 orchestrator session）
-      if (input.sessionID) {
-        const planGateCtx = planManager.getSystemContext(input.sessionID);
-        if (planGateCtx) {
-          output.system.push(planGateCtx);
+      try {
+        if (output?.system && Array.isArray(output.system)) {
+          output.system.push(CHINESE_LANGUAGE_INSTRUCTION);
         }
+      } catch (err) {
+        appendLog('system.transform', 'hook 失败', err);
       }
     },
 

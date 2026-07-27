@@ -1,5 +1,112 @@
 # CHANGELOG
 
+## [1.10.3] - 2026-07-25
+
+### 新增
+- co-rule-app 代理支持并行分片分析：Orchestrator 可按规则文件数量并行派发多个实例（每实例负责 1-2 个文件），替代原先的串行全量分析
+
+### 变更
+- orchestrator.md：新增"规则分析并行策略"指导段落，更新 @co-rule-app 子代理描述
+- rule-app.md：从简短描述重写为完整的结构化代理定义，支持接收指定文件子集分析
+
+## [1.10.2] - 2026-07-25
+
+### 新增
+- 新增诊断日志工具 `src/utils/log.ts`，异常信息写入 `~/.local/share/opencode/log/oh-my-opencode-cohub.YYYYMMDD.log`，按天轮转保留 7 天
+
+### 修复
+- 修复 `messages.169: all messages must have non-empty content` 错误——消息对象 `m.info` 增加可选链、`lastUserMsg.parts` 增加数组防御、`part.text` 安全拼接、`system.transform` 加 try-catch 容错
+- 修复 `tracker label` 在 `description` 为空字符串时显示空白标签的问题
+
+### 变更
+- 所有 `throw` 异常消息统一加 `[oh-my-opencode-cohub]` 前缀，便于快速溯源
+- 12 处静默 `catch {}` 和 `console.warn` 迁移到 `appendLog` 结构化日志文件
+- `council.ts` 新增 `promptText` 空值断言防御
+- 日志工具增加 `mkdir` 兜底、UTC 时区统一、`escapeRegex` 防御
+
+## [1.10.1] - 2026-07-25
+
+### 修复
+- 修复 CI 发布缺失构建步骤导致 dist/ 版本号与源码不一致的问题
+
+### 变更
+- 发版技能文档同步更新，构建职责从本地转移到 CI
+- 添加 @babel/core 版本锁定（overrides）
+
+## [1.10.0] - 2026-07-25
+
+### 新增
+- CLI install 命令添加版本号显示，从 package.json 动态读取当前版本
+
+### 变更
+- 产品显示名称统一为 `oh-my-opencode-cohub`
+
+## [1.9.3] - 2026-07-25
+
+### 移除
+- 移除 co-guardian 代理及 context-guard 上下文卫士模块（11个文件），回归精简架构
+
+### 变更
+- 代理数量从 12 个减少为 11 个
+- 移除 context-guard 全部 hooks（event/chat.params/messages.transform/chat.message）
+- CLI install 默认配置不再包含 co-guardian
+
+### 修复
+- 移除 filterEmptyMessages 幽灵消息过滤逻辑（该方案未能解决 empty content 错误）
+
+## [1.9.2] - 2026-07-25
+
+### 修复
+- 修复上下文压缩产生幽灵消息（text part 全空）导致 LLM API 报 `empty content` 错误的问题，在 `messages.transform` 钩子入口添加 `filterEmptyMessages` 过滤
+
+## [1.9.1] - 2026-07-25
+
+### 修复
+- chat.message hook 回复改为追加而非清空 parts，避免 LLM API "empty content" 错误
+
+## [1.9.0] - 2026-07-25
+
+### 新增
+- messages.transform 末尾注入核心规则：从 orchestrator 提示词动态提取 `<critical_rules>` 并注入到消息末尾，利用 recency bias 对抗长会话注意力衰减
+
+### 变更
+- 核心规则注入采用单一事实来源：从 resolved prompt 正则提取，消除硬编码双写，用户覆盖提示词后自动同步
+
+## [1.8.2] - 2026-07-24
+
+### 修复
+- Token 累计算法从覆盖改为累加（+=），修复阈值永不触发的问题
+- 添加消息去重（防重播事件重复计数）
+
+### 新增
+- 上下文卫士菜单新增"稍后提醒"选项，阶梯阈值 20%→40%→60%→80%
+
+## [1.8.1] - 2026-07-24
+
+### 修复
+- 安装脚本硬编码 agent 列表缺少 co-guardian，bunx install 无法注册该代理
+
+## [1.8.0] - 2026-07-24
+
+### 新增
+- 新增 ContextGuard 上下文卫士模块：20% 阈值时主动弹出三选一菜单（自动压缩 / 会话压缩 / 分析迁移）
+- 新增 co-guardian 子代理：启发式分析会话状态，推荐最优上下文处理策略
+- CJK 中文 token 修正估算（1.8 chars/token），避免中文文本被低估 2-3 倍
+- TUI 面板新增 co-guardian agent 展示
+
+### 变更
+- 拆除 PlanGate 方案批准门禁：orchestrator 回归纯提示词 + 用户选择模式
+- Background Job Board：getBoardText 返回值类型优化，无任务时不再注入空表格
+- oracle 提示词增强：新增 @council vs @oracle 选择指南
+
+### 修复
+- event hook sessionID 路径修正（properties.info.sessionID 替代 properties.sessionID）
+- chat.message hook 改为 output.parts 直接变异（符合 SDK 类型签名）
+
+### 移除
+- 移除 PlanGate 门禁系统（plan-gate.ts / plan-gate-audit.ts 及测试文件）
+- 移除 request_plan_approval 工具
+
 ## [1.7.0] - 2026-07-23
 
 ### 新增
