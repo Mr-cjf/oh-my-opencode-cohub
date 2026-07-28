@@ -50,22 +50,4 @@ export function loadCoHubConfig(): CoHubConfig {
   }
 }
 
-/** 示例配置模板 */
-export const DEFAULT_CONFIG: CoHubConfig = {
-  agents: {
-    'co-orchestrator': { model: 'deepseek/deepseek-v4-pro', variant: 'max' },
-    'co-oracle': { model: 'deepseek/deepseek-v4-pro', variant: 'max' },
-    'co-librarian': { model: 'deepseek/deepseek-v4-flash', variant: 'low' },
-    'co-explorer': { model: 'deepseek/deepseek-v4-flash', variant: 'low' },
-    'co-designer': { model: 'minimax/MiniMax-M3', variant: 'medium' },
-    'co-fixer': { model: 'deepseek/deepseek-v4-flash', variant: 'high' },
-    'co-observer': { model: 'codermxtest/gpt-5.5', variant: 'low' },
-    'co-council': { model: 'deepseek/deepseek-v4-pro', variant: 'high' },
-    'co-rule-user': { model: 'deepseek/deepseek-v4-flash', variant: 'medium' },
-    'co-rule-project': { model: 'deepseek/deepseek-v4-flash', variant: 'medium' },
-    'co-rule-app': { model: 'deepseek/deepseek-v4-flash', variant: 'medium' },
-    'co-planner': { model: 'deepseek/deepseek-v4-pro', variant: 'high' },
-  },
-};
-
 export { DEFAULT_CONTEXT_CONFIG };

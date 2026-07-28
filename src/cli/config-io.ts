@@ -124,46 +124,185 @@ export function registerCoHubAgents(): { success: boolean; message: string } {
 
 const COHUB_CONFIG_PATH = path.join(os.homedir(), '.config', 'opencode', 'oh-my-opencode-cohub.json');
 
-/** 写入默认配置模板（如文件不存在） */
+// --- 智能模型匹配辅助函数 ---
+
+interface FlatModel {
+  fullModel: string;
+  variants: string[];
+}
+
+/** 重型推理 agent（orchestrator, oracle, planner, council） */
+const HEAVY_KEYWORDS = ['pro', 'preview', 'opus', 'max', 'sonnet', 'gpt-5.6'];
+
+/** 轻量 agent（librarian, explorer, fixer, rule-*） */
+const LIGHT_KEYWORDS = ['flash', 'mini', 'haiku', 'gpt-5.4', 'gpt-5.3'];
+
+/** designer 专用 */
+const DESIGN_KEYWORDS = ['minimax', 'm3', 'sonnet', 'claude'];
+
+/** observer 专用（偏好有多模态/视觉能力的模型） */
+const OBSERVER_KEYWORDS = ['gpt-5.5', 'gpt-5.4', 'vision', 'flash'];
+
+const HEAVY_TYPES = new Set(['orchestrator', 'oracle', 'planner', 'council']);
+
+function pickBestVariant(variants: string[], agentType: string): string | undefined {
+  if (!variants || variants.length === 0) return undefined;
+  const isHeavy = HEAVY_TYPES.has(agentType);
+  const priority = isHeavy ? ['max', 'xhigh', 'high', 'medium', 'low'] : ['low', 'medium', 'high', 'xhigh', 'max'];
+  for (const p of priority) {
+    if (variants.includes(p)) return p;
+  }
+  return variants[0];
+}
+
+function findBestModel(
+  flatModels: FlatModel[],
+  keywords: string[],
+  agentType: string,
+): { model: string; variant?: string } | null {
+  for (const kw of keywords) {
+    for (const m of flatModels) {
+      const modelId = m.fullModel.split('/').slice(1).join('/').toLowerCase();
+      if (modelId.includes(kw.toLowerCase())) {
+        return { model: m.fullModel, variant: pickBestVariant(m.variants, agentType) };
+      }
+    }
+  }
+  if (flatModels.length > 0) {
+    return { model: flatModels[0].fullModel, variant: pickBestVariant(flatModels[0].variants, agentType) };
+  }
+  return null;
+}
+
+function flattenModelsFromOpenCode(): FlatModel[] {
+  const opencodeConfig = readJSON(getOpencodeConfigPath());
+  if (!opencodeConfig) return [];
+
+  const providerRecord = (opencodeConfig as Record<string, unknown>)?.config as Record<string, unknown> | undefined;
+  const providers = providerRecord?.provider as Record<string, { models?: Record<string, { variants?: string[] }> }> | undefined;
+  if (!providers) return [];
+
+  const result: FlatModel[] = [];
+  for (const [providerKey, providerData] of Object.entries(providers)) {
+    const models = providerData?.models;
+    if (!models) continue;
+    for (const [modelId, modelData] of Object.entries(models)) {
+      result.push({
+        fullModel: `${providerKey}/${modelId}`,
+        variants: modelData?.variants ?? [],
+      });
+    }
+  }
+  return result;
+}
+
+// --- 主函数 ---
+
+/** 写入默认配置模板（如文件不存在），智能匹配 opencode.json 中的 provider/model */
 export function writeDefaultConfig(): { success: boolean; message: string } {
   if (fs.existsSync(COHUB_CONFIG_PATH)) {
     return { success: true, message: 'oh-my-opencode-cohub.json 已存在，跳过' };
   }
-  const defaultConfig = {
-    $schema: "https://unpkg.com/oh-my-opencode-cohub@latest/oh-my-opencode-cohub.schema.json",
-    agents: {
-      "co-orchestrator": { model: "deepseek/deepseek-v4-pro", variant: "max" },
-      "co-oracle": { model: "deepseek/deepseek-v4-pro", variant: "max" },
-      "co-librarian": { model: "deepseek/deepseek-v4-flash", variant: "low" },
-      "co-explorer": { model: "deepseek/deepseek-v4-flash", variant: "low" },
-      "co-designer": { model: "minimax/MiniMax-M3", variant: "medium" },
-      "co-fixer": { model: "deepseek/deepseek-v4-flash", variant: "high" },
-      "co-observer": { model: "codermxtest/gpt-5.5", variant: "low" },
-      "co-council": { model: "deepseek/deepseek-v4-pro", variant: "high" },
-      "co-rule-user": { model: "deepseek/deepseek-v4-flash", variant: "medium" },
-      "co-rule-project": { model: "deepseek/deepseek-v4-flash", variant: "medium" },
-      "co-rule-app": { model: "deepseek/deepseek-v4-flash", variant: "medium" },
-      "co-planner": { model: "deepseek/deepseek-v4-pro", variant: "high" }
-    },
-    council: {
-      default_preset: "default",
-      timeout: 180000,
-      councillor_execution_mode: "parallel",
-      councillor_retries: 3,
-      presets: {
-        default: {
-          alpha: { model: "deepseek/deepseek-v4-pro", variant: "max" },
-          beta: { model: "deepseek/deepseek-v4-flash", variant: "high" },
-          gamma: { model: "minimax/MiniMax-M3", variant: "medium" }
-        }
+
+  const flatModels = flattenModelsFromOpenCode();
+
+  if (flatModels.length === 0) {
+    // 无可用 provider，生成引导性配置
+    const fallbackConfig = {
+      $schema: 'https://unpkg.com/oh-my-opencode-cohub@latest/oh-my-opencode-cohub.schema.json',
+      agents: {},
+      council: { presets: {} },
+      _comment: '未找到可用供应商。请在 opencode.json 中配置 provider 后重新运行 install，或手动在此文件中配置 model 和 variant。',
+    };
+    try {
+      const dir = path.dirname(COHUB_CONFIG_PATH);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(COHUB_CONFIG_PATH, JSON.stringify(fallbackConfig, null, 2), 'utf-8');
+      return { success: true, message: '✓ 已创建 oh-my-opencode-cohub.json（无可用 provider，请手动配置模型）' };
+    } catch {
+      return { success: false, message: '⚠ 无法创建配置文件' };
+    }
+  }
+
+  // Agent → 关键词映射表
+  const agentSpecs: Array<{ name: string; keywords: string[]; agentType: string }> = [
+    { name: 'co-orchestrator', keywords: HEAVY_KEYWORDS, agentType: 'orchestrator' },
+    { name: 'co-oracle', keywords: HEAVY_KEYWORDS, agentType: 'oracle' },
+    { name: 'co-librarian', keywords: LIGHT_KEYWORDS, agentType: 'librarian' },
+    { name: 'co-explorer', keywords: LIGHT_KEYWORDS, agentType: 'explorer' },
+    { name: 'co-designer', keywords: DESIGN_KEYWORDS, agentType: 'designer' },
+    { name: 'co-fixer', keywords: LIGHT_KEYWORDS, agentType: 'fixer' },
+    { name: 'co-observer', keywords: OBSERVER_KEYWORDS, agentType: 'observer' },
+    { name: 'co-council', keywords: HEAVY_KEYWORDS, agentType: 'council' },
+    { name: 'co-rule-user', keywords: LIGHT_KEYWORDS, agentType: 'rule-user' },
+    { name: 'co-rule-project', keywords: LIGHT_KEYWORDS, agentType: 'rule-project' },
+    { name: 'co-rule-app', keywords: LIGHT_KEYWORDS, agentType: 'rule-app' },
+    { name: 'co-planner', keywords: HEAVY_KEYWORDS, agentType: 'planner' },
+  ];
+
+  const agents: Record<string, { model: string; variant?: string }> = {};
+  let matched = 0;
+  for (const spec of agentSpecs) {
+    const best = findBestModel(flatModels, spec.keywords, spec.agentType);
+    if (best) {
+      agents[spec.name] = { model: best.model, ...(best.variant ? { variant: best.variant } : {}) };
+      matched++;
+    }
+  }
+
+  // Council presets：选 3 个不同 model（尽量不同 provider）
+  const usedProviders = new Set<string>();
+  const councilSlots: Array<{ key: string; keywords: string[]; agentType: string }> = [
+    { key: 'alpha', keywords: HEAVY_KEYWORDS, agentType: 'council' },
+    { key: 'beta', keywords: LIGHT_KEYWORDS, agentType: 'council' },
+    { key: 'gamma', keywords: DESIGN_KEYWORDS, agentType: 'council' },
+  ];
+  const presets: Record<string, { model: string; variant?: string }> = {};
+  let councilCount = 0;
+  for (const slot of councilSlots) {
+    const candidates = flatModels.filter(m => !usedProviders.has(m.fullModel.split('/')[0]));
+    const pool = candidates.length > 0 ? candidates : flatModels; // 回退到全部
+    const best = findBestModel(pool, slot.keywords, slot.agentType);
+    if (best && !usedProviders.has(best.model.split('/')[0])) {
+      presets[slot.key] = { model: best.model, ...(best.variant ? { variant: best.variant } : {}) };
+      usedProviders.add(best.model.split('/')[0]);
+      councilCount++;
+    }
+  }
+  // 如果 council 不足 3 个，用剩余模型补充
+  if (councilCount < 3 && councilCount < flatModels.length) {
+    const reservedSlots = ['alpha', 'beta', 'gamma'];
+    for (const m of flatModels) {
+      if (councilCount >= 3) break;
+      const provider = m.fullModel.split('/')[0];
+      if (!usedProviders.has(provider)) {
+        const slot = reservedSlots[councilCount];
+        presets[slot] = { model: m.fullModel, ...(pickBestVariant(m.variants, 'council') ? { variant: pickBestVariant(m.variants, 'council') } : {}) };
+        usedProviders.add(provider);
+        councilCount++;
       }
     }
+  }
+
+  const defaultConfig = {
+    $schema: 'https://unpkg.com/oh-my-opencode-cohub@latest/oh-my-opencode-cohub.schema.json',
+    agents,
+    council: councilCount > 0 ? {
+      default_preset: 'default',
+      timeout: 180000,
+      councillor_execution_mode: 'parallel',
+      councillor_retries: 3,
+      presets: {
+        default: presets,
+      },
+    } : { presets: {} },
   };
+
   try {
     const dir = path.dirname(COHUB_CONFIG_PATH);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(COHUB_CONFIG_PATH, JSON.stringify(defaultConfig, null, 2), 'utf-8');
-    return { success: true, message: '✓ 已创建 oh-my-opencode-cohub.json 配置模板' };
+    return { success: true, message: `✓ 已智能匹配 ${matched}/12 个代理的模型，生成 oh-my-opencode-cohub.json` };
   } catch {
     return { success: false, message: '⚠ 无法创建配置文件' };
   }

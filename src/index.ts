@@ -24,22 +24,6 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { appendLog } from './utils/log.js';
 
-/** 默认模型配置 */
-const DEFAULT_MODELS: Record<string, string> = {
-  orchestrator: 'deepseek/deepseek-v4-pro',
-  oracle: 'deepseek/deepseek-v4-pro',
-  librarian: 'deepseek/deepseek-v4-flash',
-  explorer: 'deepseek/deepseek-v4-flash',
-  designer: 'minimax/MiniMax-M3',
-  fixer: 'deepseek/deepseek-v4-flash',
-  observer: 'codermxtest/gpt-5.5',
-  council: 'deepseek/deepseek-v4-pro',
-  'rule-user': 'deepseek/deepseek-v4-flash',
-  'rule-project': 'deepseek/deepseek-v4-flash',
-  'rule-app': 'deepseek/deepseek-v4-flash',
-  planner: 'deepseek/deepseek-v4-pro',
-};
-
 /** 中文提示词映射表 */
 const CHINESE_PROMPTS: Record<string, string> = {
   'co-orchestrator': ORCHESTRATOR_PROMPT,
@@ -177,8 +161,8 @@ const CoHubPlugin: Plugin = async (input, options) => {
       if (!fs.existsSync(STATE_DIR)) {
         fs.mkdirSync(STATE_DIR, { recursive: true });
       }
-      const configs = agents.map(a => {
-        const modelStr = a.config.model as string;
+      const configs = agents.filter(a => (a.config as Record<string, unknown>).model).map(a => {
+        const modelStr = (a.config as Record<string, unknown>).model as string;
         const parts = modelStr.split('/');
         const provider = parts.length > 1 ? parts[0] : 'default';
         const shortModel = parts.length > 1 ? parts.slice(1).join('/') : modelStr;
@@ -186,7 +170,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
           name: a.name,
           description: a.description,
           model: shortModel,
-          variant: a.config.variant || null,
+          variant: (a.config as Record<string, unknown>).variant || null,
           provider,
         };
       });
@@ -198,42 +182,40 @@ const CoHubPlugin: Plugin = async (input, options) => {
   const agents = [
     {
       name: 'co-orchestrator',
-      config: { mode: 'primary', model: 'deepseek/deepseek-v4-pro', variant: 'max', prompt: ORCHESTRATOR_PROMPT },
+      config: { mode: 'primary', prompt: ORCHESTRATOR_PROMPT },
     },
     {
       name: 'co-oracle',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-pro', variant: 'max', temperature: 0.1, prompt: ORACLE_PROMPT },
+      config: { mode: 'subagent', temperature: 0.1, prompt: ORACLE_PROMPT },
     },
     {
       name: 'co-librarian',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: LIBRARIAN_PROMPT },
+      config: { mode: 'subagent', prompt: LIBRARIAN_PROMPT },
     },
     {
       name: 'co-explorer',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: EXPLORER_PROMPT },
+      config: { mode: 'subagent', prompt: EXPLORER_PROMPT },
     },
     {
       name: 'co-designer',
-      config: { mode: 'subagent', model: 'minimax/MiniMax-M3', variant: 'medium', prompt: DESIGNER_PROMPT },
+      config: { mode: 'subagent', prompt: DESIGNER_PROMPT },
     },
     {
       name: 'co-fixer',
       mode: 'subagent',
       description: '执行者——代码修改、构建、测试',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', variant: 'high', prompt: FIXER_PROMPT },
+      config: { mode: 'subagent', prompt: FIXER_PROMPT },
     },
     {
       name: 'co-observer',
       description: '观察者——图片/PDF/截图视觉分析',
-      config: { mode: 'subagent', model: 'codermxtest/gpt-5.5', prompt: OBSERVER_PROMPT },
+      config: { mode: 'subagent', prompt: OBSERVER_PROMPT },
     },
     {
       name: 'co-council',
       description: '多模型共识——并行 LLM 综合',
       config: {
         mode: 'subagent',
-        model: 'deepseek/deepseek-v4-pro',
-        variant: 'high',
         prompt: COUNCIL_PROMPT,
         permission: { council_session: 'allow' as const },
       },
@@ -241,22 +223,22 @@ const CoHubPlugin: Plugin = async (input, options) => {
     {
       name: 'co-rule-user',
       description: '用户规范分析——~/.config/opencode/AGENTS.md',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: RULE_USER_PROMPT },
+      config: { mode: 'subagent', prompt: RULE_USER_PROMPT },
     },
     {
       name: 'co-rule-project',
       description: '项目规范分析——项目 AGENTS.md',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: RULE_PROJECT_PROMPT },
+      config: { mode: 'subagent', prompt: RULE_PROJECT_PROMPT },
     },
     {
       name: 'co-rule-app',
       description: '应用规则分析——.opencode/rules/*.md',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: RULE_APP_PROMPT },
+      config: { mode: 'subagent', prompt: RULE_APP_PROMPT },
     },
     {
       name: 'co-planner',
       description: '方案制定——综合需求+信息+规范输出任务分解',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-pro', variant: 'high', prompt: PLANNER_PROMPT },
+      config: { mode: 'subagent', prompt: PLANNER_PROMPT },
     },
   ];
 
@@ -266,12 +248,14 @@ const CoHubPlugin: Plugin = async (input, options) => {
     for (const agent of agents) {
       const override = userConfig.agents[agent.name];
       if (override) {
-        if (override.model) agent.config.model = override.model;
+        if (override.model) (agent.config as Record<string, unknown>).model = override.model;
         if (override.variant) (agent.config as Record<string, unknown>).variant = override.variant;
         if (override.prompt) agent.config.prompt = override.prompt;
       }
     }
   }
+
+  syncAgentConfig();  // 写入 agent 配置供 TUI 面板读取（覆盖完成后执行）
 
   // ===== 应用文件级覆盖（优先级：文件替换 > 文件追加 > JSON 配置 > 内置常量） =====
   for (const agent of agents) {
@@ -301,11 +285,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
     councillor_execution_mode: 'parallel' as const,
     councillor_retries: 3,
     presets: {
-      default: {
-        alpha: { model: 'deepseek/deepseek-v4-pro', variant: 'max' },
-        beta: { model: 'deepseek/deepseek-v4-flash', variant: 'high' },
-        gamma: { model: 'minimax/MiniMax-M3', variant: 'medium' },
-      },
+      default: {},  // 空预设，完全依赖 oh-my-opencode-cohub.json 配置
     },
   };
   // 初始化上下文引擎
@@ -315,8 +295,6 @@ const CoHubPlugin: Plugin = async (input, options) => {
   const councilConfig = userConfig.council ?? DEFAULT_COUNCIL_CONFIG;
   const councilManager = new CouncilManager(input.client, input.directory, councilConfig);
   const councilTools = createCouncilTool(input, councilManager);
-
-  syncAgentConfig();  // 启动时立即写入 agent 配置供 TUI 面板读取
 
   // ===== 辅助：从 tool output 中提取子任务 session ID =====
   function extractChildSessionId(output: unknown): string | undefined {
@@ -428,7 +406,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
                 '**当前任务**: ' + description + '\n';
               // prompt 是子代理实际看到的消息，description 只是 session 标题
               const targetField = typeof output.args.prompt === 'string' ? 'prompt' : 'description';
-              output.args[targetField] = (targetField === 'prompt' ? output.args.prompt : description) + contextBlock;
+              output.args[targetField] = ((targetField === 'prompt' ? output.args.prompt : description) ?? '') + contextBlock;
 
 
               // 填充上下文（同步等待完成，确保子代理启动前上下文已就绪）
@@ -527,6 +505,24 @@ const CoHubPlugin: Plugin = async (input, options) => {
       try {
         if (!output.messages || !Array.isArray(output.messages)) return;
 
+        // 诊断日志：记录消息 parts 分布，发现空 parts 时告警
+        if (output.messages) {
+          for (let d = 0; d < output.messages.length; d++) {
+            const msg = output.messages[d];
+            const parts = msg.parts;
+            if (!parts || !Array.isArray(parts) || parts.length === 0) {
+              void appendLog('messages.transform',
+                `⚠️ 消息[${d}] role=${msg.info?.role ?? '?'} parts为空`);
+            } else {
+              const hasTextPart = parts.some(p => p.type === 'text');
+              if (!hasTextPart && msg.info?.role === 'user') {
+                void appendLog('messages.transform',
+                  `⚠️ 消息[${d}] role=user parts无text类型, types=[${parts.map(p => p.type).join(',')}]`);
+              }
+            }
+          }
+        }
+
         // 从最后一条 user 消息提取 sessionID
         let lastUserMsg: (typeof output.messages)[number] | undefined;
         let sessionID: string | undefined;
@@ -541,8 +537,17 @@ const CoHubPlugin: Plugin = async (input, options) => {
 
         if (!lastUserMsg) return;
 
-        // ↓ 新增：防御 parts 不存在的情况
-        if (!lastUserMsg.parts || !Array.isArray(lastUserMsg.parts)) return;
+        // 防御：parts 不存在、非数组、或为空数组时，推入占位 text part
+        if (!lastUserMsg.parts || !Array.isArray(lastUserMsg.parts) || lastUserMsg.parts.length === 0) {
+          lastUserMsg.parts = [{ type: 'text', text: ' ' }] as any;
+          void appendLog('messages.transform',
+            `⚠️ lastUserMsg parts为空，已推入占位text part (session=${sessionID?.slice(0,20) ?? '?'})`);
+        } else if (!lastUserMsg.parts.some(p => p.type === 'text')) {
+          // parts 存在但没有任何 text 类型，推入一个空 text part
+          lastUserMsg.parts.push({ type: 'text', text: ' ' } as any);
+          void appendLog('messages.transform',
+            `⚠️ lastUserMsg parts无text类型，已推入占位text part (session=${sessionID?.slice(0,20) ?? '?'})`);
+        }
 
         // 1. 注入 Background Job Board
         const board = tracker.getBoardText();
@@ -565,6 +570,43 @@ const CoHubPlugin: Plugin = async (input, options) => {
             }
           }
         }
+
+        // 兜底：注入完成后若 lastUserMsg content 仍为空，设非空占位
+        {
+          let userContent = '';
+          for (const p of lastUserMsg.parts ?? []) {
+            if (p.type === 'text') userContent += (p.text ?? '');
+          }
+          if (!userContent.trim()) {
+            for (const p of lastUserMsg.parts ?? []) {
+              if (p.type === 'text') { p.text = ' '; break; }
+            }
+            void appendLog('messages.transform',
+              `⚠️ 注入后 content 为空，已设空格占位 (session=${sessionID?.slice(0,20) ?? '?'})`);
+          }
+        }
+
+        // 全量兜底：任何消息最终 content 为空 → 空格占位
+        for (let i = 0; i < output.messages.length; i++) {
+          const msg = output.messages[i];
+          const parts = (msg.parts ?? []) as Array<{ type: string; text?: string }>;
+          let totalText = '';
+          for (const p of parts) {
+            if (p.type === 'text' && p.text) totalText += p.text;
+          }
+          if (!totalText.trim() && parts.length > 0) {
+            let found = false;
+            for (const p of parts) {
+              if (p.type === 'text') { p.text = ' '; found = true; break; }
+            }
+            if (!found) {
+              parts.push({ type: 'text', text: ' ' } as any);
+            }
+            void appendLog('messages.transform',
+              `⚠️ 消息[${i}] role=${msg.info?.role ?? '?'} content为空，已设占位 (session=${sessionID?.slice(0,20) ?? '?'})`);
+          }
+        }
+
       } catch (err) {
         appendLog('messages.transform', 'hook 失败', err);
       }
