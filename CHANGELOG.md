@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## [1.12.2] - 2026-07-28
+
+### 修复
+- 修复 `opencode.json` 中旧版残留的 `model`/`variant` 字段覆盖 `oh-my-opencode-cohub.json` 配置的问题——`registerCoHubAgents` 升级时自动清理，确保配置分离生效
+
+### 变更
+- `install` 重复运行完全幂等：多次安装不会重复清理、不覆盖用户自定义 prompt
+
 ## [1.12.1] - 2026-07-28
 
 ### 修复
