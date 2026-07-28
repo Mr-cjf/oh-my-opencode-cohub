@@ -17,68 +17,12 @@ import { TaskTracker } from './task-manager/tracker';
 import { ContextEngine } from './context/engine';
 import { resolveStrategy } from './context/strategy';
 import type { ContextStrategy } from './context/types';
-import { loadCoHubConfig, type AgentOverride, type CoHubConfig } from './config/loader';
+import { loadCoHubConfig, type AgentOverride } from './config/loader';
 import { createCouncilTool, CouncilManager } from './tools/council';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { appendLog } from './utils/log.js';
-
-// ===== opencode.json 同步工具 =====
-
-/**
- * 将 oh-my-opencode-cohub.json 中 agents 的 model/variant
- * 同步到 opencode.json 的 agent 字段，确保文件配置与用户期望一致。
- *
- * 背景：OpenCode 内部配置合并时，opencode.json 的 agent 段优先级
- * 高于插件 config hook 的运行时输出，导致 oh-my-opencode-cohub.json
- * 中的覆盖在文件中不生效。此函数在插件启动时将覆盖写回文件，
- * 从而消除优先级冲突。
- */
-function syncAgentConfigToOpencode(userConfig: CoHubConfig): void {
-  const agents = userConfig.agents;
-  if (!agents) return;
-
-  const opencodePath = path.join(os.homedir(), '.config', 'opencode', 'opencode.json');
-  let opencodeConfig: Record<string, unknown>;
-  try {
-    if (!fs.existsSync(opencodePath)) return;
-    const raw = fs.readFileSync(opencodePath, 'utf-8');
-    opencodeConfig = JSON.parse(raw) as Record<string, unknown>;
-  } catch (err) {
-    appendLog('sync', 'opencode.json 读取或解析失败，跳过同步', err);
-    return;
-  }
-
-  const agentSection = opencodeConfig.agent as Record<string, Record<string, unknown>> | undefined;
-  if (!agentSection) return;
-
-  let changed = false;
-  for (const [agentName, override] of Object.entries(agents)) {
-    const agentEntry = agentSection[agentName];
-    if (!agentEntry || typeof agentEntry !== 'object' || Array.isArray(agentEntry)) continue;
-
-    if (override.model && agentEntry.model !== override.model) {
-      agentEntry.model = override.model;
-      changed = true;
-    }
-    if (override.variant && agentEntry.variant !== override.variant) {
-      agentEntry.variant = override.variant;
-      changed = true;
-    }
-  }
-
-  if (changed) {
-    try {
-      const tmpPath = opencodePath + '.tmp';
-      fs.writeFileSync(tmpPath, JSON.stringify(opencodeConfig, null, 2) + '\n');
-      fs.renameSync(tmpPath, opencodePath);
-      appendLog('sync', '已将 oh-my-opencode-cohub.json 的 agent model/variant 同步到 opencode.json', null);
-    } catch (err) {
-      appendLog('sync', '同步 opencode.json 失败', err);
-    }
-  }
-}
 
 /** 默认模型配置 */
 const DEFAULT_MODELS: Record<string, string> = {
@@ -328,9 +272,6 @@ const CoHubPlugin: Plugin = async (input, options) => {
       }
     }
   }
-
-  // ===== 同步 agent model/variant 到 opencode.json（解决运行时覆盖不生效问题） =====
-  syncAgentConfigToOpencode(userConfig);
 
   // ===== 应用文件级覆盖（优先级：文件替换 > 文件追加 > JSON 配置 > 内置常量） =====
   for (const agent of agents) {
