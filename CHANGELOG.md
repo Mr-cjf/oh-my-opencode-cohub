@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## [1.12.0] - 2026-07-28
+
+### 新增
+- CLI install 完成自动输出 AI 配置文案，README 新增"方式三：复制文案交给 AI 配置"章节，用户复制粘贴给 AI 即可自动生成 `oh-my-opencode-cohub.json`
+- `writeDefaultConfig()` 智能模型匹配：从 `opencode.json` 动态读取 provider/model，按重型（pro/max/sonnet/opus）/轻型（flash/mini/haiku）/设计/观察者关键词自动分配，无 provider 时生成带 `_comment` 的引导配置
+
+### 修复
+- 代理数量硬编码 13→12 修正（`src/cli/index.ts` 注释和 console.log）
+- README 部首字符错误修复（`执⾏` → `执行`）
+
+### 变更
+- 删除 `DEFAULT_CONFIG` / `DEFAULT_MODELS` 硬编码导出，配置完全由外部文件管理
+- `src/index.ts` 移除所有 agent `config` 中的 `model`/`variant` 硬编码，council 默认 preset 改为空对象
+- `messages.transform` hook 新增防御性编程兜底（空 parts 补全、content 为空设占位、诊断日志）
+- Orchestrator 工作流优化：方案制定由 Orchestrator 自身执行改为委派 @co-planner，规则分析策略移至信息收集步骤
+
 ## [1.11.1] - 2026-07-28
 
 ### 修复
