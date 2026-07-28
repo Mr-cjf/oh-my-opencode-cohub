@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## [1.11.1] - 2026-07-28
+
+### 修复
+- 修复 v1.11.0 中 `install` 覆盖 `opencode.json` 的问题——`readJSON` 不支持 JSONC 格式导致解析失败后创建空对象覆盖全部配置（包括 provider 和 agent）
+- 修复 agent model/variant 与 `opencode.json` 存在冲突的问题
+
+### 变更
+- agent 架构重构：`opencode.json` 只存 agent 结构（description/mode/prompt），model/variant 由 `oh-my-opencode-cohub.json` 唯一管理，消除一切覆盖冲突
+- `co-orchestrator` 改为 `mode: "primary"`，install 自动写入 `default_agent`
+- 移除 v1.11.0 引入的 `syncAgentConfigToOpencode` 同步机制
+
 ## [1.11.0] - 2026-07-28
 
 ### 新增
