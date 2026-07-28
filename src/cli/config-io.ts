@@ -94,24 +94,45 @@ export function registerCoHubAgents(): { success: boolean; message: string } {
 
   let added = 0;
   let migrated = 0;
+  let cleanedModel = 0;
   for (const [name, agentConfig] of Object.entries(cohubAgents)) {
-    const existing = agents[name] as { prompt?: unknown; permission?: unknown; mode?: string; description?: string } | undefined;
+    const existing = agents[name] as { prompt?: unknown; permission?: unknown; mode?: string; description?: string; model?: unknown; variant?: unknown } | undefined;
     const template = agentConfig as { mode: string; prompt: string };
     if (!existing) {
       agents[name] = agentConfig;
       added++;
-    } else if (typeof existing.prompt === 'string' && existing.prompt.includes('request_plan_approval')) {
+      continue;
+    }
+
+    let needUpdate = false;
+
+    if (typeof existing.prompt === 'string' && existing.prompt.includes('request_plan_approval')) {
       // 旧版 prompt 残留（v1.6.0/v1.7.0 PlanGate 时代），强制覆盖为新版
       existing.prompt = template.prompt;
       delete existing.permission;  // 清理 PlanGate 残留权限字段
-      migrated++;
-    } else if (existing.mode !== template.mode) {
+      needUpdate = true;
+    }
+
+    if (existing.mode !== template.mode) {
       // mode 字段变更（如 subagent → primary），同步更新 prompt 和 mode
       existing.mode = template.mode;
       existing.prompt = template.prompt;
-      migrated++;
+      needUpdate = true;
     }
-    // 其他情况：保留用户自定义配置，不做覆盖
+
+    // 清理旧版遗留的 model/variant（v1.11.1 以前写入 opencode.json 的残留）
+    // 这些字段现在由 oh-my-opencode-cohub.json 唯一管理，留在 opencode.json 会覆盖外部配置
+    if ('model' in existing) {
+      delete existing.model;
+      needUpdate = true;
+      cleanedModel++;
+    }
+    if ('variant' in existing) {
+      delete existing.variant;
+      needUpdate = true;
+    }
+
+    if (needUpdate) migrated++;
   }
 
   if (added > 0 || migrated > 0) {
@@ -124,7 +145,11 @@ export function registerCoHubAgents(): { success: boolean; message: string } {
     writeJSON(configPath, config);
   }
 
-  return { success: true, message: `✓ CoHub 代理：新增 ${added} 个，更新 ${migrated} 个${added + migrated === 0 ? '（全部已是最新，跳过）' : ''}` };
+  const parts: string[] = [];
+  if (added > 0) parts.push(`新增 ${added} 个`);
+  if (migrated > 0) parts.push(`更新 ${migrated} 个`);
+  if (cleanedModel > 0) parts.push(`清理 ${cleanedModel} 个 model/variant 残留`);
+  return { success: true, message: `✓ CoHub 代理：${parts.join('，')}${parts.length === 0 ? '（全部已是最新，跳过）' : ''}` };
 }
 
 
