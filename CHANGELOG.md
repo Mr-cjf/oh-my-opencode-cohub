@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## [1.12.1] - 2026-07-28
+
+### 修复
+- 修复 `install` 升级时 `co-orchestrator` 的 `mode` 字段未从 `subagent` 更新为 `primary` 的问题——`registerCoHubAgents` 新增 mode 不匹配检测，自动同步 prompt 和 mode
+
+### 变更
+- `.gitignore` 新增 `*.tgz` 和 `references/` 忽略规则，防止误提交
+
 ## [1.12.0] - 2026-07-28
 
 ### 新增
