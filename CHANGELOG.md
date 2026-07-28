@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## [1.11.0] - 2026-07-28
+
+### 新增
+- 插件启动时自动将 `oh-my-opencode-cohub.json` 中 agent model/variant 同步写入 `opencode.json`，解决 OpenCode 内部配置合并优先级导致用户覆盖不生效的问题（采用原子写入、类型守卫、诊断日志）
+
 ## [1.10.3] - 2026-07-25
 
 ### 新增
