@@ -95,14 +95,20 @@ export function registerCoHubAgents(): { success: boolean; message: string } {
   let added = 0;
   let migrated = 0;
   for (const [name, agentConfig] of Object.entries(cohubAgents)) {
-    const existing = agents[name] as { prompt?: unknown; permission?: unknown } | undefined;
+    const existing = agents[name] as { prompt?: unknown; permission?: unknown; mode?: string; description?: string } | undefined;
+    const template = agentConfig as { mode: string; prompt: string };
     if (!existing) {
       agents[name] = agentConfig;
       added++;
     } else if (typeof existing.prompt === 'string' && existing.prompt.includes('request_plan_approval')) {
       // 旧版 prompt 残留（v1.6.0/v1.7.0 PlanGate 时代），强制覆盖为新版
-      existing.prompt = agentConfig.prompt;
+      existing.prompt = template.prompt;
       delete existing.permission;  // 清理 PlanGate 残留权限字段
+      migrated++;
+    } else if (existing.mode !== template.mode) {
+      // mode 字段变更（如 subagent → primary），同步更新 prompt 和 mode
+      existing.mode = template.mode;
+      existing.prompt = template.prompt;
       migrated++;
     }
     // 其他情况：保留用户自定义配置，不做覆盖
