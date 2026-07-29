@@ -1,42 +1,24 @@
 # CHANGELOG
-## [1.12.9-beta.6] - 2026-07-29
+## [1.12.9] - 2026-07-29
 
 ### 修复
-- install 后 OpenCode 报 `tool_use ids found without tool_result`：messages.transform 全量兜底逻辑破坏含 tool_use 块的 assistant 消息结构，删除该兜底
-
-## [1.12.9-beta.5] - 2026-07-29
-
-### 修复
-- install 架构缺陷：改为 `npm install` 到 `~/.cache/opencode/packages/` 缓存目录，含完整 node_modules 依赖树，彻底解决旧版 dist 从未更新的问题
-- opencode.json plugin 条目改为带版本号格式 `oh-my-opencode-cohub@x.y.z`，install 时自动更新版本
-
-### 变更
-- 删除 `copyPluginFiles`/`copyRecursive`，不再手动复制 dist
-
-### 新增
-- `uninstallCoHub` 新增清理缓存目录 + 旧 plugins 目录
-
-## [1.12.9-beta.4] - 2026-07-29
-
-### 修复
-- install 未复制 dist 文件到 plugins 目录导致旧代码从未更新：新增 `copyPluginFiles` 步骤（v1.12.9-beta.5 中已替换为更完善的 `installToCacheDir`）
-
-### 变更
-- CI publish 步骤增加 prerelease 自动检测 `--tag beta`
-
-## [1.12.9-beta.3] - 2026-07-29
-
-### 修复
+- install 后 OpenCode 报 `tool_use ids found without tool_result`：删除 messages.transform 全量兜底逻辑，避免破坏含 tool_use 块的 assistant 消息结构
+- messages.transform 核心规则注入包裹标记（`--- 核心规则提醒 ---`）被发送给 AI 模型：去掉包裹标记，仅保留提示词内容
+- install 架构缺陷：改为 `npm install` 到 `~/.cache/opencode/packages/` 缓存目录，含完整 node_modules 依赖树
+- opencode.json plugin 条目改为带版本号格式 `oh-my-opencode-cohub@x.y.z`，已有条目自动更新版本号
 - orchestrator 角色定义与规则1 流程不一致：补上"委派信息收集"步骤
-- critical_rules 注入可能受覆盖影响而丢失：改为注入完整 `ORCHESTRATOR_PROMPT` 内置常量
+- critical_rules 注入可能受覆盖影响：改为注入完整内置常量，不受外部配置覆盖
 - publish CI 因 `package-lock.json` 版本不同步失败：`npm ci` 改为 `npm install`
 
 ### 变更
-- 回退 v1.12.7-1.12.8 双保险架构
+- 删除 `copyPluginFiles`/`copyRecursive`，不再手动复制 dist 到 plugins 目录
+- 回退 v1.12.7-1.12.8 双保险架构（install 仅写 mode+description，model/variant 由 config hook 注入）
+- CI publish 增加 prerelease 自动检测 `--tag beta`
 
 ### 新增
-- hub config 支持项目级覆盖
-- 全链路诊断日志（config hook / syncAgentConfig / messages.transform）
+- `uninstallCoHub` 新增清理 `~/.cache/opencode/packages/` 缓存目录 + 旧 `~/.config/opencode/plugins/` 目录
+- hub config 支持项目级覆盖（`.opencode/oh-my-opencode-cohub.json` > `~/.config/opencode/oh-my-opencode-cohub.json`）
+- 全链路诊断日志：config hook / syncAgentConfig / messages.transform 均打印注入状态预览
 
 ## [1.12.6] - 2026-07-29
 
