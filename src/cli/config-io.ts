@@ -112,7 +112,8 @@ export function registerCoHubAgents(): { success: boolean; message: string } {
     }
   }
 
-  // 设置默认代理
+  // 设置默认代理（参照 slim：仅设 default_agent，不写 agent 定义）
+  // co-orchestrator 的 mode: primary 由 return { agent } 和 config hook 提供
   if (!config.default_agent) {
     config.default_agent = 'co-orchestrator';
     needUpdate = true;
@@ -125,7 +126,7 @@ export function registerCoHubAgents(): { success: boolean; message: string } {
   const msgParts: string[] = [];
   if (cleaned > 0) msgParts.push(`清理 ${cleaned} 个旧模板条目`);
   if (preserved > 0) msgParts.push(`保留 ${preserved} 个含自定义字段的条目`);
-  msgParts.push('Agent 定义已由插件运行时接管');
+  msgParts.push('Agent 定义已由插件运行时接管（参照 slim 架构）');
   return { success: true, message: `✓ ${msgParts.join('，')}` };
 }
 
