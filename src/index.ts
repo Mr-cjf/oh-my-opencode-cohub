@@ -372,18 +372,19 @@ const CoHubPlugin: Plugin = async (input, options) => {
         c.default_agent = 'co-orchestrator';
       }
 
-      // slim 风格合并：插件提供基础配置，opencode.json 中用户自定义优先
-      // model/variant 由插件兜底，防止 opencode.json 的空定义覆盖
+      // 合并策略：
+      // - opencode.json 优先（用户手动字段：mode/tools/temperature 等）
+      // - hub config 的 model/variant 优先（oh-my-opencode-cohub.json 是配置源）
+      // install 会将 hub config 同步写入 opencode.json，但用户可能只更新 hub config 未重装
       for (const [name, pluginConfig] of Object.entries(agentConfigs)) {
         const existing = c.agent[name] as Record<string, unknown> | undefined;
         const pc = pluginConfig as Record<string, unknown>;
         const merged: Record<string, unknown> = existing
           ? { ...pc, ...existing }
           : { ...pc };
-        // 防御：如果 existing 覆盖了 model/variant 为 undefined/空，从 plugin 补回
-        // （opencode.json 中 old agent 定义不含 model/variant，合并后会丢失）
-        if (!merged.model && pc.model) merged.model = pc.model;
-        if (!merged.variant && pc.variant) merged.variant = pc.variant;
+        // hub config 的 model/variant 总是覆盖 opencode.json 中的值
+        if (pc.model) merged.model = pc.model;
+        if (pc.variant) merged.variant = pc.variant;
         c.agent[name] = merged;
       }
 
