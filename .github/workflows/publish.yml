@@ -35,8 +35,8 @@ jobs:
           fi
           echo "✅ 版本一致: v$TAG_VERSION"
 
-      - run: npm ci
+      - run: npm install
 
-      - run: npm run build
+      - run: bun run build
 
       - run: npm publish --provenance --access public
