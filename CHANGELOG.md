@@ -1,4 +1,9 @@
 # CHANGELOG
+## [1.12.9-beta.6] - 2026-07-29
+
+### 修复
+- install 后 OpenCode 报 `tool_use ids found without tool_result`：messages.transform 全量兜底逻辑破坏含 tool_use 块的 assistant 消息结构，删除该兜底
+
 ## [1.12.9-beta.5] - 2026-07-29
 
 ### 修复
