@@ -194,6 +194,65 @@ CLI 会精确清理所有 `co-*` 代理和相关配置，不影响其他插件�
 - 可用代理列表中出现 12 个 `co-*` 前缀代理（`co-orchestrator`、`co-oracle`、`co-librarian`、`co-explorer`、`co-designer`、`co-fixer`、`co-observer`、`co-council`、`co-rule-user`、`co-rule-project`、`co-rule-app`、`co-planner`）
 - Orchestrator 自动进入纯调度模式（只做规划、委派、验证，不直接操作文件）
 
+### 故障排查：代理模型未生效？
+
+如果重启后代理可见但 model/variant 未应用，或子代理仍然不可见，复制以下文案交给 AI 自动诊断修复：
+
+> **适用场景**：`@` 列表中缺少某些 co-* 代理，或代理使用的 model 与预期不符。
+
+````
+## 你的任务
+
+帮我在当前环境中诊断并修复 oh-my-opencode-cohub 的代理配置问题。
+
+**诊断步骤（按顺序执行，执行完向我报告结果）：**
+
+### 第一步：检查 opencode.json 的 agent 条目
+
+读取 `~/.config/opencode/opencode.json`，检查 `agent` 字段中是否存在以下 12 个条目：
+- co-orchestrator (mode: primary) + 其余 11 个 (mode: subagent)
+
+如果缺少某些条目，说明插件未正确安装，运行以下命令重新安装：
+```bash
+bun pm cache rm && bunx oh-my-opencode-cohub@latest install
+```
+
+### 第二步：检查 model/variant 配置
+
+读取 `~/.config/opencode/oh-my-opencode-cohub.json`，确认 `agents` 字段下每个代理都有 `model` 和 `variant`。
+
+如果 agent 条目有 model 但 opencode.json 中缺少 model，手动将 model/variant 补入 opencode.json 对应条目：
+```json
+"co-explorer": {
+  "mode": "subagent",
+  "description": "...",
+  "model": "deepseek-anthropic/deepseek-v4-flash",
+  "variant": "low"
+}
+```
+
+### 第三步：验证 config hook（仅诊断）
+
+检查 `~/.local/share/opencode/storage/oh-my-opencode-cohub/config-hook-ran.json` 是否存在且 `count` 为 12。如果不存在或 count < 12，说明插件未正常加载，检查：
+- opencode.json 的 `plugin` 数组是否包含 `"oh-my-opencode-cohub"`
+- OpenCode 版本是否 >= 1.17
+
+### 第四步：最终修复
+
+如果以上检查都通过但代理仍无 model/variant，执行完整重装：
+```bash
+bunx oh-my-opencode-cohub uninstall && bun pm cache rm && bunx oh-my-opencode-cohub@latest install
+```
+重启 OpenCode 后验证。
+
+### 第五步：验证修复
+
+请确认以下内容后告诉我结果：
+- TAB 切换列表中有 co-orchestrator
+- `@` 输入时能看到至少 11 个子代理名称
+- 随便 @ 某个子代理（如 `@co-explorer 搜索src目录`），确认它能正常工作
+````
+
 ### 从源码安装（本地开发）
 
 如果需要修改源码或使用开发版本：

@@ -112,10 +112,11 @@ export function registerCoHubAgents(): { success: boolean; message: string } {
     }
   }
 
-  // 写入全部 12 个 co-* 代理的最简模板到 opencode.json
+  // 写入全部 12 个 co-* 代理模板到 opencode.json
   // OpenCode 1.17.20 仅从 opencode.json 静态发现代理，return { agent } 不生效
-  // 每个条目只含 mode + description，不含 model/variant/prompt
-  // 模型和 variant 由 config hook 从 oh-my-opencode-cohub.json 注入
+  // 双保险：先从 oh-my-opencode-cohub.json 读取 model/variant 写入条目
+  // config hook 运行时也会再次注入（防御插件重载后覆盖）
+  const hubConfig = loadHubConfig();
   const TEMPLATE_AGENTS: Array<{ name: string; mode: string; description: string }> = [
     { name: 'co-orchestrator', mode: 'primary', description: '纯调度者——编排任务、委派执行' },
     { name: 'co-oracle', mode: 'subagent', description: '战略顾问——架构审查、复杂调试' },
@@ -132,15 +133,21 @@ export function registerCoHubAgents(): { success: boolean; message: string } {
   ];
 
   config.agent = config.agent ?? {};
-  const agents = config.agent as Record<string, unknown>;
+  const agentTarget = config.agent as Record<string, unknown>;
   for (const tpl of TEMPLATE_AGENTS) {
-    const existing = agents[tpl.name] as Record<string, unknown> | undefined;
+    const existing = agentTarget[tpl.name] as Record<string, unknown> | undefined;
+    const hubOverride = hubConfig[tpl.name];
+    const base: Record<string, unknown> = { mode: tpl.mode, description: tpl.description };
+    // 双保险：从 oh-my-opencode-cohub.json 读取 model/variant 写入 opencode.json
+    // config hook 作为第二道防线在运行时再次注入
+    if (hubOverride?.model) base.model = hubOverride.model;
+    if (hubOverride?.variant) base.variant = hubOverride.variant;
+
     if (existing) {
-      // 已有条目：保留用户自定义字段（model/variant/tools 等），只确保 mode 正确
-      existing.mode = tpl.mode;
-      if (!existing.description) existing.description = tpl.description;
+      // 保留用户手动添加的字段，但确保 mode/description/model/variant 来自模板或 hub
+      agentTarget[tpl.name] = { ...base, ...existing, mode: tpl.mode };
     } else {
-      agents[tpl.name] = { mode: tpl.mode, description: tpl.description };
+      agentTarget[tpl.name] = base;
     }
   }
   needUpdate = true;
@@ -164,6 +171,18 @@ export function registerCoHubAgents(): { success: boolean; message: string } {
 
 
 const COHUB_CONFIG_PATH = path.join(os.homedir(), '.config', 'opencode', 'oh-my-opencode-cohub.json');
+
+/** 读取 oh-my-opencode-cohub.json 中的 agent 覆盖配置 */
+function loadHubConfig(): Record<string, { model?: string; variant?: string }> {
+  try {
+    if (!fs.existsSync(COHUB_CONFIG_PATH)) return {};
+    const raw = fs.readFileSync(COHUB_CONFIG_PATH, 'utf-8');
+    const data = JSON.parse(raw) as { agents?: Record<string, { model?: string; variant?: string }> };
+    return data.agents ?? {};
+  } catch {
+    return {};
+  }
+}
 
 // --- 智能模型匹配辅助函数 ---
 
