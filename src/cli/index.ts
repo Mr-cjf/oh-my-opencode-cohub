@@ -27,7 +27,7 @@ async function main() {
 
     console.log('\n✅ CoHub 安装完成！');
     console.log('   重启 OpenCode 后，TAB 选择 "co-orchestrator" 开始纯调度模式。');
-    console.log('   已注册 12 个 co-* 代理到 opencode.json 的 agent 字段。');
+    console.log('   12 个 co-* 代理由插件运行时管理。');
 
     console.log(`\n${'='.repeat(60)}`);
     console.log('📋 已自动生成默认代理模型配置。如需自定义，可复制以下文案让 AI 帮你优化：');

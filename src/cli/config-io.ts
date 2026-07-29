@@ -112,8 +112,17 @@ export function registerCoHubAgents(): { success: boolean; message: string } {
     }
   }
 
-  // 设置默认代理（参照 slim：仅设 default_agent，不写 agent 定义）
-  // co-orchestrator 的 mode: primary 由 return { agent } 和 config hook 提供
+  // 确保 co-orchestrator 有最小化主代理条目（仅 mode + description）
+  // 不含 model/variant/prompt：模型走 oh-my-opencode-cohub.json，prompt 走插件
+  // 其余 11 个子代理完全由 return { agent } + config hook 运行时管理
+  config.agent = config.agent ?? {};
+  (config.agent as Record<string, unknown>)['co-orchestrator'] = {
+    mode: 'primary',
+    description: '纯调度者——编排任务、委派执行',
+  };
+  needUpdate = true;
+
+  // 设置默认代理
   if (!config.default_agent) {
     config.default_agent = 'co-orchestrator';
     needUpdate = true;
