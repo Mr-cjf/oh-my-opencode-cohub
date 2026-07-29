@@ -274,7 +274,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
 
   // ===== 核心规则提取（从内置常量提取，不受 .md / hub config 覆盖影响） =====
   const coreRulesInjectionText = ORCHESTRATOR_PROMPT
-    ? `\n\n--- 核心规则提醒（本轮注入，不持久化） ---\n${ORCHESTRATOR_PROMPT}\n--- 注入结束 ---`
+    ? `\n${ORCHESTRATOR_PROMPT}`
     : null;
   void appendLog('critical_rules', coreRulesInjectionText
     ? `已注入完整提示词: 长度=${ORCHESTRATOR_PROMPT.length}`
