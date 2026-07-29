@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { execSync } from 'node:child_process';
 
 const PACKAGE_NAME = 'oh-my-opencode-cohub';
 
@@ -33,19 +34,30 @@ function writeJSON(filePath: string, data: unknown): void {
 }
 
 /** 添加 CoHub 到 opencode.json 的 plugin 数组 */
-export function addPluginToOpenCodeConfig(): { success: boolean; message: string } {
+export function addPluginToOpenCodeConfig(version: string): { success: boolean; message: string } {
   const configPath = getOpencodeConfigPath();
   let config = readJSON(configPath) ?? {};
   const plugins: string[] = Array.isArray(config.plugin) ? [...config.plugin] : [];
 
+  const pkgSpec = `${PACKAGE_NAME}@${version}`;
+
+  // 检查已有条目（忽略版本号差异）
   if (plugins.some(p => p.includes(PACKAGE_NAME))) {
-    return { success: true, message: 'CoHub 已在 opencode.json 的 plugin 数组中，跳过' };
+    // 更新为当前版本
+    for (let i = 0; i < plugins.length; i++) {
+      if (plugins[i].includes(PACKAGE_NAME)) {
+        plugins[i] = pkgSpec;
+      }
+    }
+    config.plugin = plugins;
+    writeJSON(configPath, config);
+    return { success: true, message: `✓ 已更新 "${pkgSpec}" 到 opencode.json 的 plugin 数组` };
   }
 
-  plugins.unshift(PACKAGE_NAME);
+  plugins.unshift(pkgSpec);
   config.plugin = plugins;
   writeJSON(configPath, config);
-  return { success: true, message: `✓ 已添加 "${PACKAGE_NAME}" 到 opencode.json 的 plugin 数组` };
+  return { success: true, message: `✓ 已添加 "${pkgSpec}" 到 opencode.json 的 plugin 数组` };
 }
 
 /** 添加 CoHub 到 tui.json 的 plugin 数组 */
@@ -162,6 +174,7 @@ export function registerCoHubAgents(): { success: boolean; message: string } {
 }
 
 const COHUB_CONFIG_PATH = path.join(os.homedir(), '.config', 'opencode', 'oh-my-opencode-cohub.json');
+const PACKAGES_CACHE = path.join(os.homedir(), '.cache', 'opencode', 'packages', PACKAGE_NAME);
 
 // --- 智能模型匹配辅助函数 ---
 
@@ -455,45 +468,58 @@ export function uninstallCoHub(): { success: boolean; messages: string[] } {
     }
   }
 
+  // 6. 清理缓存目录
+  if (fs.existsSync(PACKAGES_CACHE)) {
+    try {
+      fs.rmSync(PACKAGES_CACHE, { recursive: true, force: true });
+      messages.push('✓ 已清理缓存目录');
+    } catch {
+      messages.push('⚠ 清理缓存目录失败，请手动删除: ' + PACKAGES_CACHE);
+    }
+  }
+
+  // 7. 清理旧 plugins 目录（迁移期兼容）
+  const legacyPluginsDir = path.join(os.homedir(), '.config', 'opencode', 'plugins', PACKAGE_NAME);
+  if (fs.existsSync(legacyPluginsDir)) {
+    try {
+      fs.rmSync(legacyPluginsDir, { recursive: true, force: true });
+      messages.push('✓ 已清理旧 plugins 目录');
+    } catch { /* 静默 */ }
+  }
+
   messages.push('✅ CoHub 卸载完成。完全关闭 OpenCode 后重新打开即可。');
   return { success: true, messages };
 }
 
-/** 递归复制目录 */
-function copyRecursive(src: string, dest: string): void {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const entry of fs.readdirSync(src)) {
-    const srcPath = path.join(src, entry);
-    const destPath = path.join(dest, entry);
-    if (fs.statSync(srcPath).isDirectory()) {
-      copyRecursive(srcPath, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
-    }
-  }
-}
-
-/** 复制 dist 文件到 ~/.config/opencode/plugins/oh-my-opencode-cohub/dist/ */
-export function copyPluginFiles(cliDir: string): { success: boolean; message: string } {
+/** 将 cohub 安装到 ~/.cache/opencode/packages/oh-my-opencode-cohub/（含完整 node_modules） */
+export function installToCacheDir(version: string): { success: boolean; message: string } {
   try {
-    const distDir = path.resolve(cliDir, '..');
-    const pluginDir = path.join(os.homedir(), '.config', 'opencode', 'plugins', PACKAGE_NAME);
-    const targetDir = path.join(pluginDir, 'dist');
+    const targetDir = PACKAGES_CACHE;
 
+    // 清空旧安装
     if (fs.existsSync(targetDir)) {
       fs.rmSync(targetDir, { recursive: true, force: true });
     }
+    fs.mkdirSync(targetDir, { recursive: true });
 
-    copyRecursive(distDir, targetDir);
+    // 创建临时 package.json
+    const pkgJson = { private: true };
+    fs.writeFileSync(path.join(targetDir, 'package.json'), JSON.stringify(pkgJson, null, 2), 'utf-8');
 
-    const pkgSrc = path.resolve(distDir, '..', 'package.json');
-    const pkgDest = path.join(pluginDir, 'package.json');
-    if (fs.existsSync(pkgSrc)) {
-      fs.copyFileSync(pkgSrc, pkgDest);
+    // npm install cohub
+    const pkgSpec = `${PACKAGE_NAME}@${version}`;
+    const cmd = `npm install "${pkgSpec}" --save --legacy-peer-deps`;
+    execSync(cmd, { cwd: targetDir, stdio: 'pipe', timeout: 120000 });
+
+    // 验证安装产物
+    const entryPath = path.join(targetDir, 'node_modules', PACKAGE_NAME, 'dist', 'index.js');
+    if (!fs.existsSync(entryPath)) {
+      return { success: false, message: `⚠ npm install 成功但入口文件缺失: ${entryPath}` };
     }
 
-    return { success: true, message: `✓ 已复制 dist 文件到 ${targetDir}` };
+    return { success: true, message: `✓ 已安装 ${pkgSpec} 到 ${targetDir}` };
   } catch (e) {
-    return { success: false, message: `⚠ 复制 dist 失败: ${(e as Error).message}` };
+    return { success: false, message: `⚠ 安装失败: ${(e as Error).message}` };
   }
 }
+
