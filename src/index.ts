@@ -364,11 +364,29 @@ const CoHubPlugin: Plugin = async (input, options) => {
 
     // 方式二：config hook 再次写入（确保兼容所有模式）
     config: async (cfg: Record<string, unknown>) => {
-      const c = cfg as { agent?: Record<string, unknown> };
+      const c = cfg as { agent?: Record<string, unknown>; default_agent?: string };
       c.agent ??= {};
-      for (const [name, config] of Object.entries(agentConfigs)) {
-        c.agent[name] = config;
+
+      // 兜底设置默认代理（与 opencode.json 的 default_agent 互补）
+      if (!c.default_agent) {
+        c.default_agent = 'co-orchestrator';
       }
+
+      // slim 风格合并：插件提供基础配置，opencode.json 中用户自定义优先
+      // model/variant 由插件兜底，防止 opencode.json 的空定义覆盖
+      for (const [name, pluginConfig] of Object.entries(agentConfigs)) {
+        const existing = c.agent[name] as Record<string, unknown> | undefined;
+        const pc = pluginConfig as Record<string, unknown>;
+        const merged: Record<string, unknown> = existing
+          ? { ...pc, ...existing }
+          : { ...pc };
+        // 防御：如果 existing 覆盖了 model/variant 为 undefined/空，从 plugin 补回
+        // （opencode.json 中 old agent 定义不含 model/variant，合并后会丢失）
+        if (!merged.model && pc.model) merged.model = pc.model;
+        if (!merged.variant && pc.variant) merged.variant = pc.variant;
+        c.agent[name] = merged;
+      }
+
       try { fs.writeFileSync(path.join(STATE_DIR, 'config-hook-ran.json'), JSON.stringify({ ran: true, count: agents.length })); } catch (err) {
         appendLog('config', '双重注册写入文件失败', err);
       }
