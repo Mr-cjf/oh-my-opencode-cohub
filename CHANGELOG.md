@@ -1,4 +1,10 @@
 # CHANGELOG
+## [1.12.5] - 2026-07-29
+
+### 修复
+- `co-orchestrator` 主代理条目兜底：opencode.json 保留最小化条目（仅 `mode: primary` + `description`）确保 TAB 切换可靠，其余 11 个子代理完全由插件运行时管理
+- 修正安装提示文案：`已注册到 opencode.json` → `由插件运行时管理`
+
 ## [1.12.4] - 2026-07-29
 
 ### 修复
