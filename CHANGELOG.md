@@ -1,4 +1,11 @@
 # CHANGELOG
+## [1.12.3] - 2026-07-29
+
+### 修复
+- 根除 agent model/variant 配置不生效：参照 oh-my-opencode-slim 架构，agent 定义不再写入 opencode.json，改由 config hook 运行时管理。config hook 改为 slim 风格合并策略（插件兜底 + 用户优先），新增 model/variant 防御回填；registerCoHubAgents 简化为安全清理（仅删除纯模板条目，保留用户自定义）
+
+### 变更
+- agent 架构重构：opencode.json 不再写入 agent 定义，消除与插件运行时配置的优先级冲突
 
 ## [1.12.2] - 2026-07-28
 
