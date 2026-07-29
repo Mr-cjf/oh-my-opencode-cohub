@@ -37,14 +37,36 @@ export interface CoHubConfig {
 }
 
 /** 配置文件路径 */
-const CONFIG_PATH = path.join(os.homedir(), '.config', 'opencode', 'oh-my-opencode-cohub.json');
+const USER_CONFIG_PATH = path.join(os.homedir(), '.config', 'opencode', 'oh-my-opencode-cohub.json');
 
-/** 加载用户配置 */
-export function loadCoHubConfig(): CoHubConfig {
+/** 加载用户配置（项目级优先覆盖用户级） */
+export function loadCoHubConfig(projectDir?: string): CoHubConfig {
+  const base = readJSON(USER_CONFIG_PATH) as CoHubConfig;
+  if (!projectDir) return base;
+
+  const projectPath = path.join(projectDir, '.opencode', 'oh-my-opencode-cohub.json');
+  const project = readJSON(projectPath) as CoHubConfig;
+  if (!project || Object.keys(project).length === 0) return base;
+
+  // 项目级覆盖用户级（shallow merge per-agent）
+  const merged: CoHubConfig = { ...base };
+  if (project.agents) {
+    merged.agents = { ...base.agents, ...project.agents };
+  }
+  if (project.council) {
+    merged.council = project.council;
+  }
+  if (project.context) {
+    merged.context = { ...base.context, ...project.context };
+  }
+  return merged;
+}
+
+function readJSON(filePath: string): Record<string, unknown> | null {
   try {
-    if (!fs.existsSync(CONFIG_PATH)) return {};
-    const raw = fs.readFileSync(CONFIG_PATH, 'utf-8');
-    return JSON.parse(raw) as CoHubConfig;
+    if (!fs.existsSync(filePath)) return {};
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    return JSON.parse(raw) as Record<string, unknown>;
   } catch {
     return {};
   }

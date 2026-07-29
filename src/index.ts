@@ -175,6 +175,9 @@ const CoHubPlugin: Plugin = async (input, options) => {
         };
       });
       fs.writeFileSync(AGENT_CONFIG_FILE, JSON.stringify({ updatedAt: Date.now(), agents: configs }), 'utf-8');
+      void appendLog('syncAgentConfig', `已同步 ${configs.length} 个 agent: ${JSON.stringify(
+        configs.map(c => ({ name: c.name, model: c.model, variant: c.variant })),
+      )}`);
     } catch { /* 静默失败 */ }
   }
 
@@ -243,7 +246,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
   ];
 
   // ===== 加载用户配置覆盖 =====
-  const userConfig = loadCoHubConfig();
+  const userConfig = loadCoHubConfig(projectDir);
   if (userConfig.agents) {
     for (const agent of agents) {
       const override = userConfig.agents[agent.name];
@@ -269,14 +272,13 @@ const CoHubPlugin: Plugin = async (input, options) => {
     }
   }
 
-  // ===== 核心规则提取（利用 recency bias 对抗长会话注意力衰减） =====
-  const orchestratorAgent = agents.find(a => a.name === 'co-orchestrator');
-  const criticalRulesMatch = (orchestratorAgent?.config.prompt as string | undefined)?.match(
-    /<critical_rules>([\s\S]*?)<\/critical_rules>/
-  );
-  const coreRulesInjectionText = criticalRulesMatch
-    ? `\n\n--- 核心规则提醒（本轮注入，不持久化） ---\n<critical_rules>${criticalRulesMatch[1]}</critical_rules>\n--- 注入结束 ---`
+  // ===== 核心规则提取（从内置常量提取，不受 .md / hub config 覆盖影响） =====
+  const coreRulesInjectionText = ORCHESTRATOR_PROMPT
+    ? `\n\n--- 核心规则提醒（本轮注入，不持久化） ---\n${ORCHESTRATOR_PROMPT}\n--- 注入结束 ---`
     : null;
+  void appendLog('critical_rules', coreRulesInjectionText
+    ? `已注入完整提示词: 长度=${ORCHESTRATOR_PROMPT.length}`
+    : '⚠️ ORCHESTRATOR_PROMPT 为空，注入跳过');
 
   // ===== Council 初始化（无配置时使用内置默认预设） =====
   const DEFAULT_COUNCIL_CONFIG = {
@@ -389,8 +391,21 @@ const CoHubPlugin: Plugin = async (input, options) => {
       }
 
       try { fs.writeFileSync(path.join(STATE_DIR, 'config-hook-ran.json'), JSON.stringify({ ran: true, count: agents.length })); } catch (err) {
-        appendLog('config', '双重注册写入文件失败', err);
+        void appendLog('config', '双重注册写入文件失败', err);
       }
+      void appendLog('config.hook', `config hook 注入完成: ${JSON.stringify(
+        Object.entries(agentConfigs).map(([name, cfg]) => {
+          const c = cfg as Record<string, unknown>;
+          const prompt = typeof c.prompt === 'string' ? c.prompt : '';
+          return {
+            name,
+            promptLen: prompt.length,
+            promptPreview: prompt.slice(0, 120),
+            hasModel: !!c.model,
+            hasVariant: !!c.variant,
+          };
+        }),
+      )}`);
     },
 
     'tool.execute.before': async (input, output) => {
@@ -579,7 +594,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
             }
           }
         }
-        // 3. 注入核心规则（利用 recency bias 对抗长会话注意力衰减）
+        // 3. 注入核心规则（从内置常量提取，不受覆盖影响）
         if (coreRulesInjectionText) {
           for (let k = lastUserMsg.parts.length - 1; k >= 0; k--) {
             const part = lastUserMsg.parts[k];
@@ -588,6 +603,9 @@ const CoHubPlugin: Plugin = async (input, options) => {
               break;
             }
           }
+          void appendLog('messages.transform', `已注入 orchestrator 完整提示词: 长度=${coreRulesInjectionText.length}, 内容预览=${coreRulesInjectionText.slice(0, 200)}`);
+        } else {
+          void appendLog('messages.transform', '⚠️ orchestrator 提示词为空，注入跳过');
         }
 
         // 兜底：注入完成后若 lastUserMsg content 仍为空，设非空占位
