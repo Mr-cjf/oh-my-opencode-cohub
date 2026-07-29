@@ -1,4 +1,9 @@
 # CHANGELOG
+## [1.12.4] - 2026-07-29
+
+### 修复
+- 纯 slim 架构：opencode.json 不写任何 agent 定义（包括 co-orchestrator），`mode: primary` 由 `return { agent }` 和 `config` hook 运行时提供，消除一切覆盖冲突
+
 ## [1.12.3] - 2026-07-29
 
 ### 修复
