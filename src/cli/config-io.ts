@@ -112,14 +112,37 @@ export function registerCoHubAgents(): { success: boolean; message: string } {
     }
   }
 
-  // 确保 co-orchestrator 有最小化主代理条目（仅 mode + description）
-  // 不含 model/variant/prompt：模型走 oh-my-opencode-cohub.json，prompt 走插件
-  // 其余 11 个子代理完全由 return { agent } + config hook 运行时管理
+  // 写入全部 12 个 co-* 代理的最简模板到 opencode.json
+  // OpenCode 1.17.20 仅从 opencode.json 静态发现代理，return { agent } 不生效
+  // 每个条目只含 mode + description，不含 model/variant/prompt
+  // 模型和 variant 由 config hook 从 oh-my-opencode-cohub.json 注入
+  const TEMPLATE_AGENTS: Array<{ name: string; mode: string; description: string }> = [
+    { name: 'co-orchestrator', mode: 'primary', description: '纯调度者——编排任务、委派执行' },
+    { name: 'co-oracle', mode: 'subagent', description: '战略顾问——架构审查、复杂调试' },
+    { name: 'co-planner', mode: 'subagent', description: '方案制定——综合需求+信息+规范输出任务分解' },
+    { name: 'co-council', mode: 'subagent', description: '多模型共识——并行LLM综合' },
+    { name: 'co-librarian', mode: 'subagent', description: '研究员——查文档、搜索、Web检索' },
+    { name: 'co-explorer', mode: 'subagent', description: '代码探索者——项目结构、grep/glob搜索' },
+    { name: 'co-designer', mode: 'subagent', description: '设计师——UI/UX设计实现、视觉润色' },
+    { name: 'co-fixer', mode: 'subagent', description: '执行者——代码修改、构建、测试' },
+    { name: 'co-observer', mode: 'subagent', description: '观察者——图片/PDF/截图视觉分析' },
+    { name: 'co-rule-user', mode: 'subagent', description: '用户规范分析——用户级AGENTS.md' },
+    { name: 'co-rule-project', mode: 'subagent', description: '项目规范分析——项目AGENTS.md' },
+    { name: 'co-rule-app', mode: 'subagent', description: '应用规则分析——.opencode/rules/*.md' },
+  ];
+
   config.agent = config.agent ?? {};
-  (config.agent as Record<string, unknown>)['co-orchestrator'] = {
-    mode: 'primary',
-    description: '纯调度者——编排任务、委派执行',
-  };
+  const agents = config.agent as Record<string, unknown>;
+  for (const tpl of TEMPLATE_AGENTS) {
+    const existing = agents[tpl.name] as Record<string, unknown> | undefined;
+    if (existing) {
+      // 已有条目：保留用户自定义字段（model/variant/tools 等），只确保 mode 正确
+      existing.mode = tpl.mode;
+      if (!existing.description) existing.description = tpl.description;
+    } else {
+      agents[tpl.name] = { mode: tpl.mode, description: tpl.description };
+    }
+  }
   needUpdate = true;
 
   // 设置默认代理
