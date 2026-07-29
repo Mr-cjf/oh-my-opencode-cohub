@@ -1,4 +1,24 @@
 # CHANGELOG
+## [1.12.9-beta.5] - 2026-07-29
+
+### 修复
+- install 架构缺陷：改为 `npm install` 到 `~/.cache/opencode/packages/` 缓存目录，含完整 node_modules 依赖树，彻底解决旧版 dist 从未更新的问题
+- opencode.json plugin 条目改为带版本号格式 `oh-my-opencode-cohub@x.y.z`，install 时自动更新版本
+
+### 变更
+- 删除 `copyPluginFiles`/`copyRecursive`，不再手动复制 dist
+
+### 新增
+- `uninstallCoHub` 新增清理缓存目录 + 旧 plugins 目录
+
+## [1.12.9-beta.4] - 2026-07-29
+
+### 修复
+- install 未复制 dist 文件到 plugins 目录导致旧代码从未更新：新增 `copyPluginFiles` 步骤（v1.12.9-beta.5 中已替换为更完善的 `installToCacheDir`）
+
+### 变更
+- CI publish 步骤增加 prerelease 自动检测 `--tag beta`
+
 ## [1.12.9-beta.3] - 2026-07-29
 
 ### 修复
