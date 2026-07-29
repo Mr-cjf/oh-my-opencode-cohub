@@ -1,4 +1,17 @@
 # CHANGELOG
+## [1.12.9-beta.1] - 2026-07-29
+
+### 修复
+- orchestrator 角色定义与规则1 流程不一致：补上"委派信息收集"步骤，统一为 `分析需求 → 信息收集 → @co-planner 方案 → 审核 → 执行 → 验证`
+- critical_rules 注入可能受 `.md`/hub config 覆盖影响而丢失：改为注入完整 `ORCHESTRATOR_PROMPT` 内置常量，永不丢失
+
+### 变更
+- 回退 v1.12.7-1.12.8 双保险架构：`registerCoHubAgents` 不再从 hub config 读取 model/variant 写入 opencode.json，slim 架构最终落定
+
+### 新增
+- hub config 支持项目级覆盖：`.opencode/oh-my-opencode-cohub.json` 优先级高于用户级 `~/.config/opencode/oh-my-opencode-cohub.json`
+- 全链路诊断日志：config hook 打印 prompt 预览，syncAgentConfig 打印 model/variant，messages.transform 打印注入内容预览
+
 ## [1.12.6] - 2026-07-29
 
 ### 修复
