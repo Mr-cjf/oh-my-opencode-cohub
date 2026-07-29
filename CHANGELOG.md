@@ -1,4 +1,9 @@
 # CHANGELOG
+## [1.12.6] - 2026-07-29
+
+### 修复
+- 修复子代理 `@` 不可见/无法调用：OpenCode 1.17.20 不从 `return { agent }` 发现代理，改为安装时将全部 12 个 co-* 代理最简模板（mode + description）写入 opencode.json，model/variant 仍由 config hook 从 oh-my-opencode-cohub.json 注入
+
 ## [1.12.5] - 2026-07-29
 
 ### 修复
