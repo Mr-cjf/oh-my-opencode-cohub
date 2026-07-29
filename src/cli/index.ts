@@ -1,6 +1,10 @@
 #!/usr/bin/env node
+import { fileURLToPath } from 'node:url';
+import * as path from 'node:path';
 import { version } from '../../package.json';
-import { addPluginToOpenCodeConfig, addPluginToTuiConfig, registerCoHubAgents, writeDefaultConfig, uninstallCoHub } from './config-io';
+import { addPluginToOpenCodeConfig, addPluginToTuiConfig, registerCoHubAgents, writeDefaultConfig, uninstallCoHub, copyPluginFiles } from './config-io';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function main() {
   const args = process.argv.slice(2);
@@ -8,6 +12,10 @@ async function main() {
 
   if (command === 'install') {
     console.log(`🚀 oh-my-opencode-cohub v${version} 安装中...\n`);
+
+    // 0. 复制 dist 文件到 plugins 目录
+    const r0 = copyPluginFiles(__dirname);
+    console.log(r0.message);
 
     // 1. 注册到 opencode.json
     const r1 = addPluginToOpenCodeConfig();

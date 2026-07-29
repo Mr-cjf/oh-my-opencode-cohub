@@ -458,3 +458,42 @@ export function uninstallCoHub(): { success: boolean; messages: string[] } {
   messages.push('✅ CoHub 卸载完成。完全关闭 OpenCode 后重新打开即可。');
   return { success: true, messages };
 }
+
+/** 递归复制目录 */
+function copyRecursive(src: string, dest: string): void {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src)) {
+    const srcPath = path.join(src, entry);
+    const destPath = path.join(dest, entry);
+    if (fs.statSync(srcPath).isDirectory()) {
+      copyRecursive(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
+/** 复制 dist 文件到 ~/.config/opencode/plugins/oh-my-opencode-cohub/dist/ */
+export function copyPluginFiles(cliDir: string): { success: boolean; message: string } {
+  try {
+    const distDir = path.resolve(cliDir, '..');
+    const pluginDir = path.join(os.homedir(), '.config', 'opencode', 'plugins', PACKAGE_NAME);
+    const targetDir = path.join(pluginDir, 'dist');
+
+    if (fs.existsSync(targetDir)) {
+      fs.rmSync(targetDir, { recursive: true, force: true });
+    }
+
+    copyRecursive(distDir, targetDir);
+
+    const pkgSrc = path.resolve(distDir, '..', 'package.json');
+    const pkgDest = path.join(pluginDir, 'package.json');
+    if (fs.existsSync(pkgSrc)) {
+      fs.copyFileSync(pkgSrc, pkgDest);
+    }
+
+    return { success: true, message: `✓ 已复制 dist 文件到 ${targetDir}` };
+  } catch (e) {
+    return { success: false, message: `⚠ 复制 dist 失败: ${(e as Error).message}` };
+  }
+}
