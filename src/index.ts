@@ -623,27 +623,6 @@ const CoHubPlugin: Plugin = async (input, options) => {
           }
         }
 
-        // 全量兜底：任何消息最终 content 为空 → 空格占位
-        for (let i = 0; i < output.messages.length; i++) {
-          const msg = output.messages[i];
-          const parts = (msg.parts ?? []) as Array<{ type: string; text?: string }>;
-          let totalText = '';
-          for (const p of parts) {
-            if (p.type === 'text' && p.text) totalText += p.text;
-          }
-          if (!totalText.trim() && parts.length > 0) {
-            let found = false;
-            for (const p of parts) {
-              if (p.type === 'text') { p.text = ' '; found = true; break; }
-            }
-            if (!found) {
-              parts.push({ type: 'text', text: ' ' } as any);
-            }
-            void appendLog('messages.transform',
-              `⚠️ 消息[${i}] role=${msg.info?.role ?? '?'} content为空，已设占位 (session=${sessionID?.slice(0,20) ?? '?'})`);
-          }
-        }
-
       } catch (err) {
         appendLog('messages.transform', 'hook 失败', err);
       }
