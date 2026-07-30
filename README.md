@@ -23,7 +23,7 @@ OpenCode 中文智能体编排插件 CoHub——纯调度模式、全中文提�
 ### 前置条件
 
 - [OpenCode](https://opencode.ai) 已安装
-- 推荐安装 [Bun](https://bun.sh)（CLI 一键安装需要）
+- [Bun](https://bun.sh) 已安装（CLI 安装和源码构建均需要）
 
 ### 方式一：CLI 一键安装（推荐）
 
@@ -279,7 +279,7 @@ bunx oh-my-opencode-cohub install
 # node dist/cli/index.js install
 ```
 
-> **构建依赖**：`npm run build` 使用 `bun build` 和 `tsc`。系统需安装 [Bun](https://bun.sh)（构建工具）和 Node.js（类型声明生成）。所有 `@opencode-ai/*`、`@opentui/*`、`zod` 均为 external，不打包进 `dist/`。
+> **构建步骤**：`npm run build` 依次执行：1) `scripts/generate-prompts.ts` 将提示词文件生成 `src/prompts/*.ts` 导出模块；2) `bun build` 编译 `src/index.ts` + `src/tui.ts` → `dist/` 以及 `src/cli/index.ts` → `dist/cli/`；3) `tsc --emitDeclarationOnly` 生成 `.d.ts`。系统需安装 [Bun](https://bun.sh) 和 Node.js。所有 `@opencode-ai/*`、`@opentui/*`、`zod` 均为 external，不打包进 `dist/`。
 
 ## 代理一览
 
@@ -389,8 +389,15 @@ CLI 安装后自动创建 `~/.config/opencode/oh-my-opencode-cohub.json`，这�
 ## 依赖
 
 - [OpenCode](https://opencode.ai) ≥ 1.17
-- `@opencode-ai/plugin@^1.17`（运行时依赖）
-- `@opencode-ai/sdk@^1.3`（运行时依赖）
+- 运行时依赖：
+  - `@opencode-ai/plugin@^1.17.0`
+  - `@opencode-ai/sdk@^1.3.17`
+- TUI 面板（可选）：
+  - `@opentui/solid@^0.4.3`
+  - `@opentui/core@^0.4.3`
+- 开发依赖（仅源码开发时需要）：
+  - `typescript@^5.4.0`
+  - `@types/node@^26.1.1`
 - 无其他外部插件依赖
 
 ## 自定义模型
@@ -473,11 +480,14 @@ npm run build
 
 | 版本 | 日期 | 主要变更 |
 |------|------|---------|
+| [1.12.10-beta.1](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.12.10-beta.1) | 2026-07-30 | 调度策略优化、四阶段并行决策框架 |
+| [1.12.9](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.12.9) | 2026-07-29 | 安装架构修复、配置双保险回退、prerelease 发布 |
+| [1.12.0](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.12.0) | 2026-07-28 | AI 配置文案、智能模型匹配、配置外化管理 |
+| [1.11.1](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.11.1) | 2026-07-28 | 配置分离（model/variant 由 hub config 唯一管理） |
+| [1.10.2](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.10.2) | 2026-07-25 | 诊断日志工具 `src/utils/log.ts`、异常信息前缀统一 |
+| [1.9.3](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.9.3) | 2026-07-25 | 移除 co-guardian 代理、回归精简架构 |
+| [1.8.0](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.8.0) | 2026-07-24 | ContextGuard 上下文卫士、PlanGate 拆除 |
 | [1.0.18](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.0.18) | 2026-07-15 | `council_session` 多模型并行共识工具 |
-| [1.0.17](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.0.17) | 2026-07-15 | @council vs @oracle 选择指南 + DEBUG 日志移除 |
-| [1.0.16](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.0.16) | 2026-07-15 | 背景任务事件驱动跟踪 + agent 双重注册 |
-| [1.0.15](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.0.15) | 2026-07-14 | co-orchestrator 完整中文提示词 |
-| [1.0.14](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.0.14) | 2026-07-14 | HTTP 服务器模式兼容修复 |
 | [1.0.13](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.0.13) | 初始发布 | 12 个 co-* 代理 + 纯调度模式 |
 
 ## 许可证
