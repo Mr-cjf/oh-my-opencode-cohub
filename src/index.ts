@@ -272,14 +272,6 @@ const CoHubPlugin: Plugin = async (input, options) => {
     }
   }
 
-  // ===== 核心规则提取（从内置常量提取，不受 .md / hub config 覆盖影响） =====
-  const coreRulesInjectionText = ORCHESTRATOR_PROMPT
-    ? `\n${ORCHESTRATOR_PROMPT}`
-    : null;
-  void appendLog('critical_rules', coreRulesInjectionText
-    ? `已注入完整提示词: 长度=${ORCHESTRATOR_PROMPT.length}`
-    : '⚠️ ORCHESTRATOR_PROMPT 为空，注入跳过');
-
   // ===== Council 初始化（无配置时使用内置默认预设） =====
   const DEFAULT_COUNCIL_CONFIG = {
     default_preset: 'default',
@@ -594,19 +586,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
             }
           }
         }
-        // 3. 注入核心规则（从内置常量提取，不受覆盖影响）
-        if (coreRulesInjectionText) {
-          for (let k = lastUserMsg.parts.length - 1; k >= 0; k--) {
-            const part = lastUserMsg.parts[k];
-            if (part.type === 'text') {
-              part.text = (part.text || '') + coreRulesInjectionText;
-              break;
-            }
-          }
-          void appendLog('messages.transform', `已注入 orchestrator 完整提示词: 长度=${coreRulesInjectionText.length}, 内容预览=${coreRulesInjectionText.slice(0, 200)}`);
-        } else {
-          void appendLog('messages.transform', '⚠️ orchestrator 提示词为空，注入跳过');
-        }
+
 
         // 兜底：注入完成后若 lastUserMsg content 仍为空，设非空占位
         {
