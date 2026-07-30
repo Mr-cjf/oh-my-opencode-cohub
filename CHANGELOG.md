@@ -1,8 +1,12 @@
 # CHANGELOG
 ## [1.12.10-beta.1] - 2026-07-30
 
+### 修复
+- 移除 `coreRulesInjectionText` 注入逻辑，修复 Orchestrator 提示词泄漏到子代理的问题
+
 ### 变更
 - orchestrator 提示词优化：增强并行调度策略，新增四阶段并行决策框架，验证阶段 @co-oracle 与 @co-designer 并行
+- orchestrator 提示词增强并行退火机制：执行前检查清单 + 退火警告 + 自检清单并行项
 
 ## [1.12.9] - 2026-07-29
 
