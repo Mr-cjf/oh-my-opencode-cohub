@@ -1,5 +1,5 @@
 # CHANGELOG
-## [1.12.10-beta.1] - 2026-07-30
+## [1.12.10] - 2026-07-31
 
 ### 修复
 - 移除 `coreRulesInjectionText` 注入逻辑，修复 Orchestrator 提示词泄漏到子代理的问题
