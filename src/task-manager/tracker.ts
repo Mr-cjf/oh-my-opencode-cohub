@@ -77,6 +77,7 @@ export class TaskTracker {
         return;
       }
       latest.status = status;
+      latest.terminalReconciled = true;
       if (sessionId) latest.sessionId = sessionId;
     }
   }
@@ -106,7 +107,7 @@ export class TaskTracker {
       if (job.parentSessionId !== pid) continue;
       if (job.status === 'running') {
         activeJobs.push(job);
-      } else if (job.status === 'completed' && !job.terminalReconciled) {
+      } else if (job.background && job.status === 'completed' && !job.terminalReconciled) {
         reusableJobs.push(job);
       }
     }
