@@ -39,17 +39,17 @@ function loadAgentConfig(): AgentInfo[] {
 function DEFAULT_AGENTS(): AgentInfo[] {
   const list: [string, string][] = [
     ['co-orchestrator', 'deepseek/deepseek-v4-pro'],
-    ['co-oracle', 'deepseek/deepseek-v4-pro'],
+    ['co-oracle', 'deepseek/deepseek-v4-flash'],
     ['co-librarian', 'deepseek/deepseek-v4-flash'],
     ['co-explorer', 'deepseek/deepseek-v4-flash'],
     ['co-designer', 'minimax/MiniMax-M3'],
     ['co-fixer', 'deepseek/deepseek-v4-flash'],
     ['co-observer', 'codermxtest/gpt-5.5'],
-    ['co-council', 'deepseek/deepseek-v4-pro'],
+    ['co-council', 'deepseek/deepseek-v4-flash'],
     ['co-rule-user', 'deepseek/deepseek-v4-flash'],
     ['co-rule-project', 'deepseek/deepseek-v4-flash'],
     ['co-rule-app', 'deepseek/deepseek-v4-flash'],
-    ['co-planner', 'deepseek/deepseek-v4-pro'],
+    ['co-planner', 'deepseek/deepseek-v4-flash'],
   ];
   return list.map(([name, fullModel]) => {
     const parts = fullModel.split('/');

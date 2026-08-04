@@ -114,9 +114,9 @@ npm install oh-my-opencode-cohub
 | 代理 | 角色 | 推理强度 | variant 建议 | 模型偏好 |
 |------|------|---------|-------------|---------|
 | co-orchestrator | 纯调度者，编排任务、委派执行 | **重型** | max / xhigh | pro、max、sonnet、opus 等强推理模型 |
-| co-oracle | 战略顾问，架构审查、复杂调试 | **重型** | max / xhigh | 同上 |
-| co-planner | 方案制定，综合信息输出任务分解 | **重型** | max / xhigh | 同上 |
-| co-council | 多模型共识，跨多个 LLM 综合 | **重型** | high / xhigh | 同上 |
+| co-oracle | 战略顾问，架构审查、复杂调试 | **轻型** | low / medium | flash、mini、haiku 等轻量快速模型 |
+| co-planner | 方案制定，综合信息输出任务分解 | **轻型** | low / medium | 同上 |
+| co-council | 多模型共识，跨多个 LLM 综合 | **轻型** | low / medium | 同上 |
 | co-librarian | 研究员，查文档、搜 GitHub、Web 搜索 | **轻型** | low / medium | flash、mini、haiku 等轻量快速模型 |
 | co-explorer | 代码探索者，grep/glob 搜索定位 | **轻型** | low / medium | 同上 |
 | co-fixer | 执行者，代码修改、编译、测试 | **轻型** | low / medium | 同上 |
@@ -166,7 +166,7 @@ council 是内置的多模型共识机制，会将同一个问题发给 3 个 co
 
 - 从 opencode.json 读取已配置的 provider，按上表规则为每个代理分配 model 和 variant
 - 只有 1 个 provider：所有代理都用它，variant 按表格建议选不同档位
-- 有多个 provider：重型代理优先选最强推理 provider，轻型选最快 provider
+- 有多个 provider：co-orchestrator 优先选最强推理 provider，其余代理选最快 provider
 - council 的 alpha/beta/gamma 优先选 3 个不同 provider；不够 3 个时用同一 provider 的不同 model
 - opencode.json 无任何 provider 时，生成占位配置并在 `_comment` 字段提示用户先配置
 
@@ -288,17 +288,17 @@ bunx oh-my-opencode-cohub install
 | 代理 | 默认模型 | 职责 | 读取源 |
 |------|----------|------|--------|
 | co-orchestrator | `deepseek/deepseek-v4-pro` | 纯调度：规划→委派→验证 | — |
-| co-oracle | `deepseek/deepseek-v4-pro` | 架构审查/代码审查（含 Superpowers skills） | — |
+| co-oracle | `deepseek/deepseek-v4-flash` | 架构审查/代码审查（含 Superpowers skills） | — |
 | co-librarian | `deepseek/deepseek-v4-flash` | 外部文档/API 研究 | — |
 | co-explorer | `deepseek/deepseek-v4-flash` | 代码库搜索定位 | — |
 | co-designer | `minimax/MiniMax-M3` | UI/UX 设计与实现 | — |
 | co-fixer | `deepseek/deepseek-v4-flash` | 代码修改执行（含 TDD skill） | — |
 | co-observer | `codermxtest/gpt-5.5` | 图片/PDF 分析 | — |
-| co-council | `deepseek/deepseek-v4-pro` | 多模型共识 | — |
+| co-council | `deepseek/deepseek-v4-flash` | 多模型共识 | — |
 | co-rule-user | `deepseek/deepseek-v4-flash` | 用户级规范分析 | `~/.config/opencode/AGENTS.md` |
 | co-rule-project | `deepseek/deepseek-v4-flash` | 项目级规范分析 | 项目 `AGENTS.md` |
 | co-rule-app | `deepseek/deepseek-v4-flash` | 应用规则分析 | `.opencode/rules/*.md` |
-| co-planner | `deepseek/deepseek-v4-pro` | 方案制定 | 综合需求+信息+规则 |
+| co-planner | `deepseek/deepseek-v4-flash` | 方案制定 | 综合需求+信息+规则 |
 
 > 模型可通过下文「配置文件」或「自定义模型」章节覆盖。
 
@@ -311,17 +311,17 @@ CLI 安装后自动创建 `~/.config/opencode/oh-my-opencode-cohub.json`，这�
   "$schema": "https://unpkg.com/oh-my-opencode-cohub@latest/oh-my-opencode-cohub.schema.json",
   "agents": {
     "co-orchestrator": { "model": "deepseek/deepseek-v4-pro", "variant": "max" },
-    "co-oracle":      { "model": "deepseek/deepseek-v4-pro", "variant": "max" },
+    "co-oracle":      { "model": "deepseek/deepseek-v4-flash", "variant": "low" },
     "co-librarian":   { "model": "deepseek/deepseek-v4-flash", "variant": "low" },
     "co-explorer":    { "model": "deepseek/deepseek-v4-flash", "variant": "low" },
     "co-designer":    { "model": "minimax/MiniMax-M3", "variant": "medium" },
     "co-fixer":       { "model": "deepseek/deepseek-v4-flash", "variant": "high" },
     "co-observer":    { "model": "codermxtest/gpt-5.5", "variant": "low" },
-    "co-council":     { "model": "deepseek/deepseek-v4-pro", "variant": "high" },
+    "co-council":     { "model": "deepseek/deepseek-v4-flash", "variant": "low" },
     "co-rule-user":   { "model": "deepseek/deepseek-v4-flash", "variant": "medium" },
     "co-rule-project":{ "model": "deepseek/deepseek-v4-flash", "variant": "medium" },
     "co-rule-app":    { "model": "deepseek/deepseek-v4-flash", "variant": "medium" },
-    "co-planner":     { "model": "deepseek/deepseek-v4-pro", "variant": "high" }
+    "co-planner":     { "model": "deepseek/deepseek-v4-flash", "variant": "low" }
   }
 }
 ```
@@ -480,6 +480,7 @@ npm run build
 
 | 版本 | 日期 | 主要变更 |
 |------|------|---------|
+| [v1.12.12](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.12.12) | 2026-08-04 | 子代理模型降级 Flash（适配 DeepSeek-V4-Flash 2026-07-31 增强），仅 orchestrator 保留 Pro；Board 会话复用修复 |
 | [1.12.10-beta.1](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.12.10-beta.1) | 2026-07-30 | 调度策略优化、四阶段并行决策框架 |
 | [1.12.9](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.12.9) | 2026-07-29 | 安装架构修复、配置双保险回退、prerelease 发布 |
 | [1.12.0](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.12.0) | 2026-07-28 | AI 配置文案、智能模型匹配、配置外化管理 |

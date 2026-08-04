@@ -183,7 +183,7 @@ interface FlatModel {
   variants: string[];
 }
 
-/** 重型推理 agent（orchestrator, oracle, planner, council） */
+/** 重型推理 agent（orchestrator） */
 const HEAVY_KEYWORDS = ['pro', 'preview', 'opus', 'max', 'sonnet', 'gpt-5.6'];
 
 /** 轻量 agent（librarian, explorer, fixer, rule-*） */
@@ -195,7 +195,7 @@ const DESIGN_KEYWORDS = ['minimax', 'm3', 'sonnet', 'claude'];
 /** observer 专用（偏好有多模态/视觉能力的模型） */
 const OBSERVER_KEYWORDS = ['gpt-5.5', 'gpt-5.4', 'vision', 'flash'];
 
-const HEAVY_TYPES = new Set(['orchestrator', 'oracle', 'planner', 'council']);
+const HEAVY_TYPES = new Set(['orchestrator']);
 
 function pickBestVariant(variants: string[], agentType: string): string | undefined {
   if (!variants || variants.length === 0) return undefined;
@@ -279,17 +279,17 @@ export function writeDefaultConfig(): { success: boolean; message: string } {
   // Agent → 关键词映射表
   const agentSpecs: Array<{ name: string; keywords: string[]; agentType: string }> = [
     { name: 'co-orchestrator', keywords: HEAVY_KEYWORDS, agentType: 'orchestrator' },
-    { name: 'co-oracle', keywords: HEAVY_KEYWORDS, agentType: 'oracle' },
+    { name: 'co-oracle', keywords: LIGHT_KEYWORDS, agentType: 'oracle' },
     { name: 'co-librarian', keywords: LIGHT_KEYWORDS, agentType: 'librarian' },
     { name: 'co-explorer', keywords: LIGHT_KEYWORDS, agentType: 'explorer' },
     { name: 'co-designer', keywords: DESIGN_KEYWORDS, agentType: 'designer' },
     { name: 'co-fixer', keywords: LIGHT_KEYWORDS, agentType: 'fixer' },
     { name: 'co-observer', keywords: OBSERVER_KEYWORDS, agentType: 'observer' },
-    { name: 'co-council', keywords: HEAVY_KEYWORDS, agentType: 'council' },
+    { name: 'co-council', keywords: LIGHT_KEYWORDS, agentType: 'council' },
     { name: 'co-rule-user', keywords: LIGHT_KEYWORDS, agentType: 'rule-user' },
     { name: 'co-rule-project', keywords: LIGHT_KEYWORDS, agentType: 'rule-project' },
     { name: 'co-rule-app', keywords: LIGHT_KEYWORDS, agentType: 'rule-app' },
-    { name: 'co-planner', keywords: HEAVY_KEYWORDS, agentType: 'planner' },
+    { name: 'co-planner', keywords: LIGHT_KEYWORDS, agentType: 'planner' },
   ];
 
   const agents: Record<string, { model: string; variant?: string }> = {};
@@ -305,7 +305,7 @@ export function writeDefaultConfig(): { success: boolean; message: string } {
   // Council presets：选 3 个不同 model（尽量不同 provider）
   const usedProviders = new Set<string>();
   const councilSlots: Array<{ key: string; keywords: string[]; agentType: string }> = [
-    { key: 'alpha', keywords: HEAVY_KEYWORDS, agentType: 'council' },
+    { key: 'alpha', keywords: LIGHT_KEYWORDS, agentType: 'council' },
     { key: 'beta', keywords: LIGHT_KEYWORDS, agentType: 'council' },
     { key: 'gamma', keywords: DESIGN_KEYWORDS, agentType: 'council' },
   ];
