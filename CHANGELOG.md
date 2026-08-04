@@ -1,4 +1,12 @@
 # CHANGELOG
+## [1.12.12] - 2026-08-04
+
+### 变更
+- 子代理模型降级为 Flash：co-oracle、co-council、co-planner 从 deepseek-v4-pro 改为 deepseek-v4-flash（适配 DeepSeek-V4-Flash 2026-07-31 Agent 能力增强，优化扣费）
+
+### 修复
+- 修复 Board 诱导子代理会话复用：非背景任务完成即标记为已调和，不再暴露 session ID
+
 ## [1.12.11-beta.0] - 2026-07-31
 
 ### 修复
