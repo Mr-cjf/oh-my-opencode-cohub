@@ -531,19 +531,22 @@ const CoHubPlugin: Plugin = async (input, options) => {
       try {
         if (!output.messages || !Array.isArray(output.messages)) return;
 
-        // 诊断日志：记录消息 parts 分布，发现空 parts 时告警
+        // 诊断 + 修复：对所有 user 消息确保有 text part（防止 API 报 empty content）
         if (output.messages) {
           for (let d = 0; d < output.messages.length; d++) {
             const msg = output.messages[d];
+            if (msg.info?.role !== 'user') continue; // 不碰 assistant/system 消息
             const parts = msg.parts;
             if (!parts || !Array.isArray(parts) || parts.length === 0) {
+              msg.parts = [{ type: 'text', text: ' ' }] as any;
               void appendLog('messages.transform',
-                `⚠️ 消息[${d}] role=${msg.info?.role ?? '?'} parts为空`);
+                `⚠️ 消息[${d}] role=user parts为空，已推入占位text part`);
             } else {
               const hasTextPart = parts.some(p => p.type === 'text');
-              if (!hasTextPart && msg.info?.role === 'user') {
+              if (!hasTextPart) {
+                (msg.parts as any[]).push({ type: 'text', text: ' ' });
                 void appendLog('messages.transform',
-                  `⚠️ 消息[${d}] role=user parts无text类型, types=[${parts.map(p => p.type).join(',')}]`);
+                  `⚠️ 消息[${d}] role=user parts无text类型(types=[${parts.map(p => p.type).join(',')}])，已推入占位text part`);
               }
             }
           }
