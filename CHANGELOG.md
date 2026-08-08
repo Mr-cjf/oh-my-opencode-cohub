@@ -1,5 +1,5 @@
 # CHANGELOG
-## [1.12.13-beta.0] - 2026-08-07
+## [1.12.13] - 2026-08-07
 
 ### 修复
 - 修复 messages.transform 仅对最后一条 user 消息做占位修复，恢复含 file-only 历史消息的旧会话时触发 API `messages.N: all messages must have non-empty content` 错误
