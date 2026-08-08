@@ -480,6 +480,7 @@ npm run build
 
 | 版本 | 日期 | 主要变更 |
 |------|------|---------|
+| [v1.12.13](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.12.13) | 2026-08-07 | 修复 messages.transform 仅对最后一条 user 消息做占位修复，恢复含 file-only 历史消息的旧会话时触发 API 空 content 错误 |
 | [v1.12.12](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.12.12) | 2026-08-04 | 子代理模型降级 Flash（适配 DeepSeek-V4-Flash 2026-07-31 增强），仅 orchestrator 保留 Pro；Board 会话复用修复 |
 | [1.12.10-beta.1](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.12.10-beta.1) | 2026-07-30 | 调度策略优化、四阶段并行决策框架 |
 | [1.12.9](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.12.9) | 2026-07-29 | 安装架构修复、配置双保险回退、prerelease 发布 |
