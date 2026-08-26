@@ -207,3 +207,33 @@ export function extractErrors(
 
   return errors;
 }
+
+/**
+ * 按 token 预算截断文本。
+ * P2-5: 估算规则区分中西文——中文字符（CJK 及东亚表意区）按 1 token/字符，
+ * 其余字符按 4 字符 ≈ 1 token（原统一 4 字符/token 对中文低估 2-4 倍）。
+ * 仅用于 summary 策略下文件正文裁剪；空文本或 maxTokens<=0 返回空串；
+ * 未超预算时原样返回，超预算时保留头部并在末尾追加省略标记。
+ */
+export function truncateByTokens(text: string, maxTokens: number): string {
+  if (!text || maxTokens <= 0) return '';
+  // 逐字符累计估算 token 数，找到首个超过预算的位置作为截断点
+  let used = 0;
+  let cut = text.length;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    const isCjk =
+      (code >= 0x4e00 && code <= 0x9fff) || // CJK 统一表意文字
+      (code >= 0x3400 && code <= 0x4dbf) || // CJK 扩展 A
+      (code >= 0xf900 && code <= 0xfaff) || // CJK 兼容表意文字
+      (code >= 0x3040 && code <= 0x30ff) || // 日文假名
+      (code >= 0xac00 && code <= 0xd7af);   // 韩文谚文
+    used += isCjk ? 1 : 0.25;
+    if (used > maxTokens) {
+      cut = i;
+      break;
+    }
+  }
+  if (cut >= text.length) return text;
+  return text.slice(0, cut) + '\n… [正文已按 token 预算截断]';
+}

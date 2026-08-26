@@ -1,4 +1,106 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import type { JobRecord, TaskStatus, TaskArgs } from './types';
+import type { ContextStrategy } from '../context/types';
+
+// ===== 性能指标统计（T9）=====
+
+/** 统计窗口默认大小：最近 N 条任务 */
+export const DEFAULT_STATS_WINDOW = 50;
+
+/** 统计持久化文件（CLI stats 子命令读取同一路径） */
+export const STATS_FILE = path.join(
+  os.homedir(),
+  '.local',
+  'share',
+  'opencode',
+  'storage',
+  'oh-my-opencode-cohub',
+  'stats.json',
+);
+
+/** 各代理的默认上下文策略（与 context/types.ts 默认配置一致；contextStrategy 未显式赋值时用于分组） */
+const AGENT_DEFAULT_STRATEGY: Record<string, ContextStrategy> = {
+  'co-fixer': 'relevant',
+  'co-designer': 'relevant',
+  'co-planner': 'relevant',
+  'co-oracle': 'summary',
+  'co-council': 'summary',
+};
+
+/** 按代理推断默认上下文策略 */
+export function defaultStrategyFor(agent: string): ContextStrategy {
+  return AGENT_DEFAULT_STRATEGY[agent] ?? 'none';
+}
+
+/** 参与统计的指标记录（从 JobRecord 抽取） */
+export interface StatsRecord {
+  agent: string;
+  strategy: string;
+  status: TaskStatus;
+  latencyMs?: number;
+  tokens?: { input: number; output: number };
+}
+
+/** 按 (strategy, agent) 聚合的统计桶 */
+export interface StatsBucket {
+  strategy: string;
+  agent: string;
+  count: number;
+  successCount: number;
+  successRate: number; // 0-100，无样本时为 0
+  avgLatencyMs: number; // 仅有 latencyMs 样本的均值
+  latencySamples: number;
+  avgTokens: number; // input+output 总和均值，仅统计有 tokens 的样本
+  tokenSamples: number;
+}
+
+/**
+ * 滑动窗口聚合统计（纯函数）：
+ * - records 需按时间升序传入，仅取最近 window 条
+ * - 按 (strategy, agent) 分组，输出成功率 / 平均延迟 / 平均 token
+ * - 缺少 latencyMs / tokens 的样本不影响对应均值，仅不计入样本数
+ */
+export function computeStats(records: StatsRecord[], window: number = DEFAULT_STATS_WINDOW): StatsBucket[] {
+  const recent = records.slice(-Math.max(1, window));
+  const buckets = new Map<string, StatsBucket>();
+  for (const r of recent) {
+    const key = r.strategy + '\u0000' + r.agent;
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = {
+        strategy: r.strategy,
+        agent: r.agent,
+        count: 0,
+        successCount: 0,
+        successRate: 0,
+        avgLatencyMs: 0,
+        latencySamples: 0,
+        avgTokens: 0,
+        tokenSamples: 0,
+      };
+      buckets.set(key, bucket);
+    }
+    bucket.count += 1;
+    if (r.status === 'completed') bucket.successCount += 1;
+    if (typeof r.latencyMs === 'number') {
+      bucket.avgLatencyMs = (bucket.avgLatencyMs * bucket.latencySamples + r.latencyMs) / (bucket.latencySamples + 1);
+      bucket.latencySamples += 1;
+    }
+    if (r.tokens && typeof r.tokens.input === 'number' && typeof r.tokens.output === 'number') {
+      const total = r.tokens.input + r.tokens.output;
+      bucket.avgTokens = (bucket.avgTokens * bucket.tokenSamples + total) / (bucket.tokenSamples + 1);
+      bucket.tokenSamples += 1;
+    }
+  }
+  const result = Array.from(buckets.values());
+  for (const b of result) {
+    b.successRate = b.count > 0 ? (b.successCount / b.count) * 100 : 0;
+  }
+  result.sort((a, b) => a.strategy.localeCompare(b.strategy) || a.agent.localeCompare(b.agent));
+  return result;
+}
 
 export class TaskTracker {
   private jobs = new Map<string, JobRecord>();
@@ -43,6 +145,7 @@ export class TaskTracker {
       sessionId: args.task_id ?? '',  // 背景任务：task_id 即为子 session ID
       parentSessionId,
       agent,
+      contextStrategy: defaultStrategyFor(agent),
       label,
       status: 'running',
       background: args.background ?? false,
@@ -79,6 +182,8 @@ export class TaskTracker {
       latest.status = status;
       latest.terminalReconciled = true;
       if (sessionId) latest.sessionId = sessionId;
+      this.finalize(latest);
+      this.persistStats();
     }
   }
 
@@ -90,6 +195,8 @@ export class TaskTracker {
     for (const job of this.jobs.values()) {
       if (job.sessionId === sessionId && job.background && job.status === 'running') {
         job.status = status;
+        this.finalize(job);
+        this.persistStats();
         return;
       }
     }
@@ -190,8 +297,10 @@ export class TaskTracker {
     for (const job of this.jobs.values()) {
       if (job.background && job.status === 'running' && (now - job.createdAt) > timeoutMs) {
         job.status = 'errored';
+        this.finalize(job);
       }
     }
+    this.persistStats();
   }
 
   /**
@@ -224,16 +333,74 @@ export class TaskTracker {
     return count;
   }
 
-  /** 根据子 session ID 查找 JobRecord */
-  getJobBySessionId(sessionId: string): { alias: string; agent: string } | undefined {
+  /** 根据子 session ID 查找完整 JobRecord */
+  getJobBySessionId(sessionId: string): JobRecord | undefined {
     for (const job of this.jobs.values()) {
       if (job.sessionId === sessionId) {
-        return { alias: job.alias, agent: job.agent };
+        return job;
       }
     }
     return undefined;
   }
 
+  /**
+   * 质量回送：把任务质量度量写回 JobRecord（负反馈闭环）
+   * 由 event hook 在 session.idle 时调用
+   */
+  updateQuality(sessionId: string, quality: NonNullable<JobRecord['quality']>): void {
+    for (const job of this.jobs.values()) {
+      if (job.sessionId === sessionId) {
+        job.quality = quality;
+        this.finalize(job);
+        this.persistStats();
+        return;
+      }
+    }
+  }
+
+  /**
+   * 终态收尾：确保 latencyMs 已记录（质量回送缺失时用 createdAt 差值补录）。
+   * P2-2: 未判定时 quality.score 保持 undefined（语义≠质量最差），
+   * 仅 assessQuality 实际执行过（updateQuality 传入）才携带 score。
+   */
+  private finalize(job: JobRecord): void {
+    const latencyMs = Date.now() - job.createdAt;
+    if (!job.quality) {
+      job.quality = { latencyMs };
+    } else if (job.quality.latencyMs === undefined) {
+      job.quality.latencyMs = latencyMs;
+    }
+  }
+
+  /** 收集全部终态任务为统计记录（按创建时间升序） */
+  private collectStatsRecords(): StatsRecord[] {
+    const jobs = Array.from(this.jobs.values())
+      .filter((j) => j.status !== 'running')
+      .sort((a, b) => a.createdAt - b.createdAt);
+    return jobs.map((job) => ({
+      agent: job.agent,
+      strategy: job.contextStrategy ?? defaultStrategyFor(job.agent),
+      status: job.status,
+      ...(job.quality?.latencyMs !== undefined ? { latencyMs: job.quality.latencyMs } : {}),
+      ...(job.quality?.tokens ? { tokens: job.quality.tokens } : {}),
+    }));
+  }
+
+  /** 当前统计（内存态，按 (strategy, agent) 聚合；window 为滑动窗口条数） */
+  getStats(window: number = DEFAULT_STATS_WINDOW): StatsBucket[] {
+    return computeStats(this.collectStatsRecords(), window);
+  }
+
+  /** 把最近 window 条统计记录持久化到 STATS_FILE，供 CLI stats 子命令读取 */
+  persistStats(window: number = DEFAULT_STATS_WINDOW): void {
+    try {
+      const recent = this.collectStatsRecords().slice(-Math.max(1, window));
+      fs.mkdirSync(path.dirname(STATS_FILE), { recursive: true });
+      fs.writeFileSync(STATS_FILE, JSON.stringify(recent, null, 2), 'utf8');
+    } catch {
+      // 统计持久化失败不影响任务追踪主流程
+    }
+  }
   /** cancel_task 集成：根据别名或 sessionId 标记任务为已取消并 reconcile */
   markCancelled(taskId: string): void {
     let job = this.jobs.get(taskId);
@@ -245,6 +412,8 @@ export class TaskTracker {
     if (job) {
       job.status = 'cancelled';
       job.terminalReconciled = true;
+      this.finalize(job);
+      this.persistStats();
     }
   }
 }

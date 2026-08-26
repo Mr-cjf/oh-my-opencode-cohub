@@ -84,12 +84,37 @@ const plugin: TuiPluginModule = {
     let spinnerIndex = 0;
     let state = readState();
 
-    // 每秒轮询状态 + 动画帧
-    const timer = setInterval(() => {
-      state = readState();
-      spinnerIndex = (spinnerIndex + 1) % SPINNER_FRAMES.length;
+    // 轮询退避：空闲 250ms → 1s → 2s → 5s 封顶；收到事件立即恢复 250ms 并重置退避
+    const POLL_INTERVALS = [250, 1000, 2000, 5000] as const;
+    let pollStep = 0;
+    let lastEventAt = 0;
+    let lastSnapshot = JSON.stringify(state);
+    let timer: ReturnType<typeof setTimeout>;
+
+    const pollTick = () => {
+      const nextState = readState();
+      const snapshot = JSON.stringify(nextState);
+      if (snapshot !== lastSnapshot) {
+        // 状态文件内容变化 → 视为收到事件：立即恢复 250ms 并重置退避计数
+        lastSnapshot = snapshot;
+        lastEventAt = Date.now();
+        pollStep = 0;
+      } else {
+        // 空闲退避：指数递增至 5s 封顶
+        pollStep = Math.min(pollStep + 1, POLL_INTERVALS.length - 1);
+      }
+      state = nextState;
       api.renderer.requestRender();
-    }, 250);
+      timer = setTimeout(pollTick, POLL_INTERVALS[pollStep]);
+    };
+    timer = setTimeout(pollTick, POLL_INTERVALS[0]);
+
+    // P2-6: spinner 动画由独立 100ms 定时器驱动，不受 readState 轮询退避影响
+    //（退避到 5s 时动画仍流畅；无运行任务时不触发渲染）
+    const spinnerTimer = setInterval(() => {
+      spinnerIndex = (spinnerIndex + 1) % SPINNER_FRAMES.length;
+      if (state && state.runningCount > 0) api.renderer.requestRender();
+    }, 100);
 
     api.slots.register({
       order: 800,
@@ -181,7 +206,8 @@ const plugin: TuiPluginModule = {
     });
 
     api.lifecycle.onDispose(() => {
-      clearInterval(timer);
+      clearTimeout(timer);
+      clearInterval(spinnerTimer);
     });
   },
 };

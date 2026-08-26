@@ -1,8 +1,9 @@
 // src/context/engine.ts — 上下文引擎核心
 
-import type { ContextStrategy, TaskContext, ContextConfig, DependencyResult } from './types';
+import type { ContextStrategy, TaskContext, ContextConfig, DependencyResult, RelevantFile } from './types';
 import { DEFAULT_CONTEXT_CONFIG } from './types';
-import { extractRelevantFiles, extractDecisions, extractErrors } from './extractor';
+import * as fs from 'node:fs';
+import { extractRelevantFiles, extractDecisions, extractErrors, truncateByTokens } from './extractor';
 import { formatContextMarker, replaceMarkerWithContext, CONTEXT_MARKER_PATTERN } from './formatter';
 import type { createOpencodeClient } from '@opencode-ai/sdk';
 
@@ -54,6 +55,7 @@ export class ContextEngine {
     if (!context) return;
 
     if (args.strategy === 'none') return;
+    context.strategy = args.strategy;
 
     try {
       const windowSize = this.config.relevantMessageWindow;
@@ -72,12 +74,34 @@ export class ContextEngine {
         context.errors = extractErrors(messages, this.config.maxErrors, windowSize);
       }
 
+      // P2-1: 'summary' 真正分道——决策/错误列表全保留，仅文件正文按 summarizeMaxTokens 预算截断
+      if (args.strategy === 'summary') {
+        this.attachTruncatedBodies(context.relevantFiles);
+      }
+
       if (this.config.dependencyPropagation && this.dependencyCache.size > 0) {
         context.dependencies = Array.from(this.dependencyCache.values())
           .slice(-this.config.maxDependencies);
       }
     } catch {
       // SDK 调用失败时保留最小上下文
+    }
+  }
+
+  /**
+   * summary 策略：读取相关文件正文并按 token 预算截断。
+   * 预算按文件数均摊，总注入不超过 summarizeMaxTokens；读取失败的文件保留 summary 回退。
+   */
+  private attachTruncatedBodies(files: RelevantFile[]): void {
+    if (files.length === 0) return;
+    const budgetPerFile = Math.max(1, Math.floor(this.config.summarizeMaxTokens / files.length));
+    for (const file of files) {
+      try {
+        const content = fs.readFileSync(file.path, 'utf-8');
+        file.body = truncateByTokens(content, budgetPerFile);
+      } catch {
+        // 文件不存在/不可读：保留 summary 回退，不中断
+      }
     }
   }
 
@@ -113,10 +137,25 @@ export class ContextEngine {
 
     const parts: string[] = [];
 
+    const isSummary = context.strategy === 'summary';
+
     if (context.relevantFiles.length > 0) {
-      parts.push('### 📁 相关文件');
-      for (const file of context.relevantFiles) {
-        parts.push(`- \`${file.path}\`` + (file.summary ? ` — ${file.summary}` : ''));
+      if (isSummary) {
+        // P2-1: summary 注入模板——保留文件路径锚点，正文按 token 预算截断
+        parts.push('### 📁 相关文件（正文按 token 预算截断）');
+        for (const file of context.relevantFiles) {
+          const loc = file.lines ? ':' + file.lines : '';
+          if (file.body) {
+            parts.push('- `' + file.path + loc + '`:\n```text\n' + file.body + '\n```');
+          } else {
+            parts.push('- `' + file.path + loc + '` — ' + (file.summary || '(正文不可用)'));
+          }
+        }
+      } else {
+        parts.push('### 📁 相关文件');
+        for (const file of context.relevantFiles) {
+          parts.push('- `' + file.path + '`' + (file.summary ? ' — ' + file.summary : ''));
+        }
       }
     }
 
@@ -147,38 +186,47 @@ export class ContextEngine {
   /**
    * Phase C: 捕获子代理结果。
    * 读取子 session 的最终输出 → 提取关键信息 → 存入 dependencyCache。
+   * 同时返回质量判定输入（output / decisions / tokens）供 P0-1 质量回送使用。
+   * dependencyPropagation 为 false 时跳过 dependencyCache 写入，不影响质量数据提取。
    */
   async captureResult(
     childSessionId: string,
     alias: string,
     agent: string,
-  ): Promise<void> {
-    if (!this.config.dependencyPropagation) return;
-
+  ): Promise<{ output: string; decisions: number; tokens?: { input: number; output: number } } | null> {
     try {
       const messagesResult = await this.client.session.messages({
         path: { id: childSessionId },
       });
       const messages = (messagesResult.data ?? []) as Array<{
-        info?: { role?: string };
+        info?: { role?: string; tokens?: { input?: number; output?: number } };
         parts?: Array<{ type?: string; text?: string }>;
       }>;
 
-      // 从最后一条 assistant 消息提取关键输出
+      // 从最后一条 assistant 消息提取关键输出与 token 统计
       let keyOutput = '';
+      let tokens: { input: number; output: number } | undefined;
       for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i].info?.role === 'assistant') {
-          for (const part of messages[i].parts ?? []) {
-            if (part.type === 'text' && part.text) {
-              keyOutput = part.text.slice(0, 500).replace(/\n/g, ' ');
-              break;
-            }
-          }
-          if (keyOutput) break;
+        const info = messages[i].info;
+        if (!info || info.role !== 'assistant') continue;
+        if (typeof info.tokens?.input === 'number' && typeof info.tokens?.output === 'number') {
+          tokens = { input: info.tokens.input, output: info.tokens.output };
         }
+        for (const part of messages[i].parts ?? []) {
+          if (part.type === 'text' && part.text) {
+            keyOutput = part.text.slice(0, 500).replace(/\n/g, ' ');
+            break;
+          }
+        }
+        if (keyOutput) break;
       }
 
-      if (keyOutput) {
+      // 捕获决策数（与 fillContextAsync 相同的提取逻辑）
+      const decisions = extractDecisions(messages, this.config.maxDecisions, this.config.relevantMessageWindow);
+
+      // P2-1: dependencyPropagation 关闭时不写 dependencyCache（避免多余缓存污染）；
+      // fillContextAsync 读取侧已有 gate，恢复后无用户可见回归
+      if (keyOutput && this.config.dependencyPropagation) {
         this.dependencyCache.set(alias, {
           alias,
           agent,
@@ -186,8 +234,15 @@ export class ContextEngine {
           capturedAt: Date.now(),
         });
       }
+
+      return {
+        output: keyOutput,
+        decisions: decisions.length,
+        ...(tokens ? { tokens } : {}),
+      };
     } catch {
       // SDK 调用失败时静默跳过
+      return null;
     }
   }
 

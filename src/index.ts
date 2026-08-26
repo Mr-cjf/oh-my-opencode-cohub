@@ -14,6 +14,7 @@ import { RULE_APP_PROMPT } from './prompts/rule-app';
 import { PLANNER_PROMPT } from './prompts/planner';
 import { CHINESE_LANGUAGE_INSTRUCTION } from './instructions/chinese';
 import { TaskTracker } from './task-manager/tracker';
+import { assessQuality, isQualityEnabled } from './task-manager/quality';
 import { ContextEngine } from './context/engine';
 import { resolveStrategy } from './context/strategy';
 import type { ContextStrategy } from './context/types';
@@ -339,12 +340,21 @@ const CoHubPlugin: Plugin = async (input, options) => {
 
   // ===== 构建 agent 对象（供直接返回 + config hook 双重注册） =====
   const agentConfigs: Record<string, unknown> = {};
+  const COUNCIL_ONLY_TOOLS = { council_session: 'deny' as const };
   for (const agent of agents) {
-    agentConfigs[agent.name] = {
+    const base = {
       ...agent.config,
       name: agent.name,
       description: agent.description,
-    };
+    } as Record<string, unknown>;
+    // 权限管控：council_session 仅 co-council 可用。
+    // 非 co-council 代理显式 deny；若 config 已有 permission 则合并（保留已有键）。
+    if (agent.name !== 'co-council') {
+      const existingPermission =
+        (base.permission as Record<string, unknown> | undefined) ?? {};
+      base.permission = { ...existingPermission, ...COUNCIL_ONLY_TOOLS };
+    }
+    agentConfigs[agent.name] = base;
   }
 
   return {
@@ -379,6 +389,16 @@ const CoHubPlugin: Plugin = async (input, options) => {
         // hub config 的 model/variant 总是覆盖 opencode.json 中的值
         if (pc.model) merged.model = pc.model;
         if (pc.variant) merged.variant = pc.variant;
+        // permission 键级合并：保留用户对具体工具（如 bash）的授权，
+        // 但非 co-council 代理的 council_session 始终强制 deny（防浅合并误覆盖）
+        if (name !== 'co-council') {
+          const existingPerm = (merged.permission as Record<string, unknown>) ?? {};
+          merged.permission = { ...existingPerm, ...COUNCIL_ONLY_TOOLS };
+        } else {
+          // co-council 始终保留 allow（防用户覆盖丢授权）
+          const existingPerm = (merged.permission as Record<string, unknown>) ?? {};
+          merged.permission = { ...existingPerm, council_session: 'allow' as const };
+        }
         c.agent[name] = merged;
       }
 
@@ -509,10 +529,30 @@ const CoHubPlugin: Plugin = async (input, options) => {
           tracker.updateByChildSessionId(sessionId, 'completed');
           syncTrackerState(tracker.currentParentSessionId);
 
-          // 新增：捕获子代理结果用于依赖传播
+          // 新增：捕获子代理结果用于依赖传播 + 质量回送（P0-1 负反馈闭环）
           const job = tracker.getJobBySessionId(sessionId);
           if (job) {
-            void contextEngine.captureResult(sessionId, job.alias, job.agent);
+            void contextEngine
+              .captureResult(sessionId, job.alias, job.agent)
+              .then((captured) => {
+                if (!captured) return;
+                // 质量判定：默认开启但保守——低分只标记（写回 JobRecord.quality），不改变任务成败
+                if (!isQualityEnabled(userConfig.quality)) return;
+                const quality = assessQuality({
+                  output: captured.output,
+                  decisions: captured.decisions,
+                  latencyMs: Date.now() - job.createdAt,
+                  tokens: captured.tokens,
+                });
+                tracker.updateQuality(sessionId, {
+                  score: quality.score,
+                  ...(quality.failureCategory ? { failureCategory: quality.failureCategory } : {}),
+                  ...(quality.latencyMs !== undefined ? { latencyMs: quality.latencyMs } : {}),
+                  ...(quality.tokens ? { tokens: quality.tokens } : {}),
+                });
+                syncTrackerState(tracker.currentParentSessionId);
+              })
+              .catch((err) => appendLog('event', '质量回送失败', err));
           }
         } else if (e.type === 'session.deleted') {
           tracker.updateByChildSessionId(sessionId, 'errored');

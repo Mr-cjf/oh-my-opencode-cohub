@@ -2,26 +2,13 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import type { ContextConfig } from '../context/types';
+import type { QualityConfig } from '../task-manager/quality';
 import { DEFAULT_CONTEXT_CONFIG } from '../context/types';
 
-/** 单个 councillor 配置 */
-export interface CouncillorConfig {
-  model: string;
-  variant?: string;
-  prompt?: string;
-}
-
-export interface CouncilPreset {
-  [councillorName: string]: CouncillorConfig;
-}
-
-export interface CouncilConfig {
-  presets: Record<string, CouncilPreset>;
-  timeout?: number;
-  default_preset?: string;
-  councillor_execution_mode?: 'parallel' | 'serial';
-  councillor_retries?: number;
-}
+// P2-4: Council 相关类型统一复用 council.ts 定义，消除双定义漂移
+//（纯类型 import + re-export，运行时零依赖；council.ts 不 import loader.ts，无循环依赖）
+import type { CouncilConfig, CouncilPreset, CouncillorConfig } from '../tools/council';
+export type { CouncilConfig, CouncilPreset, CouncillorConfig };
 
 /** 用户配置中单个代理的覆盖项 */
 export interface AgentOverride {
@@ -34,6 +21,8 @@ export interface CoHubConfig {
   agents?: Record<string, AgentOverride>;
   council?: CouncilConfig;
   context?: Partial<ContextConfig>;  // 用户可覆盖部分字段
+  /** 质量回送配置（P0-1 负反馈闭环，默认开启） */
+  quality?: Partial<QualityConfig>;
 }
 
 /** 配置文件路径 */
@@ -58,6 +47,9 @@ export function loadCoHubConfig(projectDir?: string): CoHubConfig {
   }
   if (project.context) {
     merged.context = { ...base.context, ...project.context };
+  }
+  if (project.quality) {
+    merged.quality = { ...base.quality, ...project.quality };
   }
   return merged;
 }

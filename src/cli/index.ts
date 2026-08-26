@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { computeStats, DEFAULT_STATS_WINDOW, STATS_FILE, type StatsBucket } from '../task-manager/tracker';
+import type { TaskStatus } from '../task-manager/types';
 import { version } from '../../package.json';
 import { addPluginToOpenCodeConfig, addPluginToTuiConfig, registerCoHubAgents, writeDefaultConfig, uninstallCoHub, installToCacheDir } from './config-io';
 
@@ -159,6 +163,8 @@ council 是内置的多模型共识机制，会将同一个问题发给 3 个 co
 
     console.log(`\n${'='.repeat(60)}`);
 
+  } else if (command === 'stats') {
+    printStats(parseWindow(args[1]));
   } else if (command === 'uninstall') {
     console.log('🧹 CoHub 卸载中...\n');
     const result = uninstallCoHub();
@@ -171,7 +177,87 @@ council 是内置的多模型共识机制，会将同一个问题发给 3 个 co
     console.log('用法:');
     console.log('  bunx oh-my-opencode-cohub install      安装 CoHub');
     console.log('  bunx oh-my-opencode-cohub uninstall    卸载 CoHub');
+    console.log('  bunx oh-my-opencode-cohub stats [N]      查看最近 N 个任务统计（默认 50）');
   }
 }
 
 main().catch(console.error);
+/** 解析 stats 窗口参数（正整数，非法时用默认值） */
+function parseWindow(raw?: string): number {
+  const n = Number.parseInt(raw ?? '', 10);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_STATS_WINDOW;
+}
+
+/** stats 子命令：输出最近 N 个任务的成功率 / 平均延迟 / 平均 token */
+function printStats(window: number): void {
+  console.log('📊 CoHub 任务统计（最近 ' + window + ' 个任务）\n');
+
+  let records: StatsBucket[] = [];
+  try {
+    if (fs.existsSync(STATS_FILE)) {
+      const raw = JSON.parse(fs.readFileSync(STATS_FILE, 'utf8')) as Array<{
+        agent: string;
+        strategy: string;
+        status: TaskStatus;
+        latencyMs?: number;
+        tokens?: { input: number; output: number };
+      }>;
+      records = computeStats(raw, window);
+    }
+  } catch {
+    records = [];
+  }
+
+  if (records.length === 0) {
+    console.log('暂无统计数据。插件运行产生任务后会持久化统计记录，届时再执行 stats 查看。');
+    return;
+  }
+
+  const pad = (s: string, w: number): string => s.padEnd(w);
+  const fmtRate = (r: number): string => r.toFixed(1) + '%';
+  const fmtMs = (ms: number, samples: number): string => (samples > 0 ? (ms / 1000).toFixed(1) + 's' : '-');
+  const fmtTokens = (t: number, samples: number): string => (samples > 0 ? String(Math.round(t)) : '-');
+
+  console.log(
+    pad('策略', 10) + pad('代理', 16) + pad('任务数', 6) + pad('成功率', 8) + pad('平均延迟', 10) + '平均Token',
+  );
+
+  let totalCount = 0;
+  let totalSuccess = 0;
+  let latencySum = 0;
+  let latencySamples = 0;
+  let tokenSum = 0;
+  let tokenSamples = 0;
+
+  for (const b of records) {
+    totalCount += b.count;
+    totalSuccess += b.successCount;
+    latencySum += b.avgLatencyMs * b.latencySamples;
+    latencySamples += b.latencySamples;
+    tokenSum += b.avgTokens * b.tokenSamples;
+    tokenSamples += b.tokenSamples;
+    console.log(
+      pad(b.strategy, 10) +
+        pad(b.agent, 16) +
+        pad(String(b.count), 6) +
+        pad(fmtRate(b.successRate), 8) +
+        pad(fmtMs(b.avgLatencyMs, b.latencySamples), 10) +
+        fmtTokens(b.avgTokens, b.tokenSamples),
+    );
+  }
+
+  if (records.length > 1) {
+    const totalRate = totalCount > 0 ? (totalSuccess / totalCount) * 100 : 0;
+    const totalMs = latencySamples > 0 ? latencySum / latencySamples : 0;
+    const totalTok = tokenSamples > 0 ? tokenSum / tokenSamples : 0;
+    console.log('-'.repeat(52));
+    console.log(
+      pad('合计', 10) +
+        pad(totalCount + ' 个任务', 16) +
+        pad('', 6) +
+        pad(fmtRate(totalRate), 8) +
+        pad(fmtMs(totalMs, latencySamples), 10) +
+        fmtTokens(totalTok, tokenSamples),
+    );
+  }
+}

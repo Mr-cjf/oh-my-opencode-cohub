@@ -8,6 +8,7 @@ export interface RelevantFile {
   path: string;
   lines?: string;       // 如 "42-87"
   summary: string;       // 一句话说明该文件与任务的关系
+  body?: string;       // summary 策略下按 token 预算截断后的文件正文
 }
 
 /** 前置子代理的完成结果 */
@@ -25,6 +26,7 @@ export interface TaskContext {
   decisions: string[];                 // 父 session 中做出的关键决策
   errors: string[];                    // 需要修复的错误信息
   dependencies: DependencyResult[];    // 前置子代理的完成结果
+  strategy?: ContextStrategy;  // 本次注入策略（summary 模板分道用）
 }
 
 /** 上下文系统配置 */

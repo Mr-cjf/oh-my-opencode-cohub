@@ -19,6 +19,15 @@ OpenCode 中文智能体编排插件。TypeScript ESM，通过 `@opencode-ai/plu
 | `co-rule-app` | `.opencode/rules/*.md` 分析 |
 | `co-planner` | 方案制定——综合需求+信息+规范输出任务分解 |
 
+## dsh-cohub（DeepSeek Harness 版插件，独立仓库）
+
+DSH 移植版已拆分为独立仓库：`C:\Users\14023\Desktop\dsh-cohub`（GitHub 待建：`Mr-cjf/dsh-cohub`）。12 个 co-* 代理以 runtime skills 注册 + 中文指令 section + council 共识工具 + co-orchestrator preset。
+
+- 构建：`cd C:\Users\14023\Desktop\dsh-cohub && npm run build`（prepublishOnly 自动构建）
+- 单测（无需 LLM）：`node test/unit.ts`
+- 本机 DSH Desktop 已安装（junction `%APPDATA%\dsh-desktop\harness\profiles\node_modules\dsh-cohub` → 独立仓库）
+- 分发：npm publish 后用户 `dsh plugin --profile web add dsh-cohub`
+
 ## 构建
 
 **前提**：bun 必须系统安装（非项目 devDependency）。
