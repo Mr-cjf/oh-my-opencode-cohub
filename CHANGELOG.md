@@ -1,4 +1,26 @@
 # CHANGELOG
+## [1.13.0-beta.0] - 2026-08-26
+
+### 新增
+- council 共识机制鲁棒性升级：失败分类、重试决策表、共识检测（≥⌈2n/3⌉）、共享重试预算、前馈降级、自适应参数、协商轮次驱动态收敛
+- 新增工具模块：adaptive-params（自适应调整 retries/timeout，带限幅+滞后防振荡）、model-stats（模型级失败历史）、quality（assessQuality 质量判定）
+- CLI 新增 `stats [N]` 子命令，展示任务成功率/延迟/token
+- summary 策略真正注入截断正文，truncateByTokens 中西文 token 估算
+- TUI 读 State 轮询退避 + 独立 spinner 定时器
+- docs/control-architecture.md：CoHub 多级分层控制架构文档
+- 新增 6 个测试文件覆盖共识/质量/统计/截断逻辑
+
+### 修复
+- council_session 工具权限管控：仅 co-council 可调用，其余 11 代理配置层 deny + 运行时白名单纵深防御（原 orchestrator 等代理会尝试调用并报错）
+- 任务质量回送闭环：子代理结果经 assessQuality 评估后回送到调度
+
+### 变更
+- src/config/loader.ts：Council 类型改为从 council.ts re-export，消除双定义漂移
+- package.json test script 改为 `bun test ./src`（限定测试目录）
+
+### 移除
+- （无）
+
 ## [1.12.13] - 2026-08-07
 
 ### 修复
