@@ -1,4 +1,19 @@
 # CHANGELOG
+## [1.13.0-beta.1] - 2026-08-27
+
+### 新增
+- `close_job` 工具：主代理可按 Session ID 或任务别名真正中止卡住的子代理后台任务（session.abort + 任务状态同步），仅 co-orchestrator 可调用，其余代理配置层 deny 双层防护
+- 定时清理增强：超时后台任务自动执行真实 abort，不再残留幽灵 running 状态
+- TaskTracker 新增 abortJob 方法与幂等守卫；cleanupStaleJobs 返回超时会话列表
+- 新增 tracker 单元测试 10 用例（pending abort / 重复 abort 幂等 / 终态守卫边界）
+
+### 变更
+- fixer/designer 提示词新增"最小实现自查阶梯"（复用优先、拒绝投机抽象；安全与验证永不省略）
+- oracle 审查清单新增"该删没删的代码"与"过度工程检测"维度
+
+### 移除
+- （无）
+
 ## [1.13.0-beta.0] - 2026-08-26
 
 ### 新增
