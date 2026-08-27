@@ -20,6 +20,7 @@ import { resolveStrategy } from './context/strategy';
 import type { ContextStrategy } from './context/types';
 import { loadCoHubConfig, type AgentOverride } from './config/loader';
 import { createCouncilTool, CouncilManager } from './tools/council';
+import { createCloseJobTool } from './tools/job-control';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -290,6 +291,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
   const councilConfig = userConfig.council ?? DEFAULT_COUNCIL_CONFIG;
   const councilManager = new CouncilManager(input.client, input.directory, councilConfig);
   const councilTools = createCouncilTool(input, councilManager);
+  const jobTools = createCloseJobTool(input, tracker, () => syncTrackerState(tracker.currentParentSessionId));
 
   // ===== 辅助：从 tool output 中提取子任务 session ID =====
   function extractChildSessionId(output: unknown): string | undefined {
@@ -326,7 +328,21 @@ const CoHubPlugin: Plugin = async (input, options) => {
   const STALE_TIMEOUT_MS = 30 * 60 * 1000;
   const cleanupTimer = setInterval(() => {
     try {
-      tracker.cleanupStaleJobs(STALE_TIMEOUT_MS);
+      const staleSessions = tracker.cleanupStaleJobs(STALE_TIMEOUT_MS);
+      for (const sid of staleSessions) {
+        // SDK 默认 ThrowOnError=false：HTTP 失败会 resolve 出 { data, error } 而非 reject，
+        // 显式检查 res.error；catch 仅兜底网络层异常
+        void (async () => {
+          try {
+            const res = await input.client.session.abort({ path: { id: sid } });
+            if (res.error) {
+              appendLog('cleanupStaleJobs', `abort stale session ${sid} 失败`, res.error);
+            }
+          } catch (err) {
+            appendLog('cleanupStaleJobs', `abort stale session ${sid} 失败`, err);
+          }
+        })();
+      }
     } catch (err) {
       appendLog('cleanupStaleJobs', '定时清理过期任务失败', err);
     }
@@ -341,18 +357,27 @@ const CoHubPlugin: Plugin = async (input, options) => {
   // ===== 构建 agent 对象（供直接返回 + config hook 双重注册） =====
   const agentConfigs: Record<string, unknown> = {};
   const COUNCIL_ONLY_TOOLS = { council_session: 'deny' as const };
+  // close_job 仅 co-orchestrator 可用；co-council 不可调用（co-council 用 council_session）
+  const ORCHESTRATOR_ONLY_TOOLS = { close_job: 'deny' as const };
   for (const agent of agents) {
     const base = {
       ...agent.config,
       name: agent.name,
       description: agent.description,
     } as Record<string, unknown>;
-    // 权限管控：council_session 仅 co-council 可用。
-    // 非 co-council 代理显式 deny；若 config 已有 permission 则合并（保留已有键）。
+    // 权限管控：
+    // - council_session 仅 co-council 可用，非 co-council 显式 deny
+    // - close_job 仅 co-orchestrator 可用，非 co-orchestrator 显式 deny
+    // 若 config 已有 permission 则合并（保留已有键）。
+    const existingPermission = (base.permission as Record<string, unknown> | undefined) ?? {};
     if (agent.name !== 'co-council') {
-      const existingPermission =
-        (base.permission as Record<string, unknown> | undefined) ?? {};
       base.permission = { ...existingPermission, ...COUNCIL_ONLY_TOOLS };
+    }
+    if (agent.name !== 'co-orchestrator') {
+      base.permission = { ...(base.permission as Record<string, unknown>), ...ORCHESTRATOR_ONLY_TOOLS };
+    } else {
+      // co-orchestrator 显式写回 allow：不依赖"无条目默认放行"，防未来全局权限策略收紧时误拦
+      base.permission = { ...(base.permission as Record<string, unknown>), close_job: 'allow' as const };
     }
     agentConfigs[agent.name] = base;
   }
@@ -363,8 +388,8 @@ const CoHubPlugin: Plugin = async (input, options) => {
     // 方式一：直接返回 agent 字段（HTTP 服务器模式更可靠）
     agent: agentConfigs,
 
-    // 工具：council_session（多模型并行共识）
-    tool: councilTools,
+    // 工具：council_session（多模型并行共识）+ close_job（中止卡住子任务）
+    tool: { ...councilTools, ...jobTools },
 
     // 方式二：config hook 再次写入（确保兼容所有模式）
     config: async (cfg: Record<string, unknown>) => {
@@ -390,14 +415,21 @@ const CoHubPlugin: Plugin = async (input, options) => {
         if (pc.model) merged.model = pc.model;
         if (pc.variant) merged.variant = pc.variant;
         // permission 键级合并：保留用户对具体工具（如 bash）的授权，
-        // 但非 co-council 代理的 council_session 始终强制 deny（防浅合并误覆盖）
-        if (name !== 'co-council') {
-          const existingPerm = (merged.permission as Record<string, unknown>) ?? {};
-          merged.permission = { ...existingPerm, ...COUNCIL_ONLY_TOOLS };
+        // 但 council_session / close_job 按代理身份键级强制修正（防浅合并误覆盖）：
+        // - co-orchestrator：council_session deny、close_job allow
+        // - co-council：council_session allow、close_job deny
+        // - 其余代理：双 deny
+        const existingPerm0 = (merged.permission as Record<string, unknown>) ?? {};
+        if (name === 'co-council') {
+          merged.permission = { ...existingPerm0, council_session: 'allow' as const, ...ORCHESTRATOR_ONLY_TOOLS };
+        } else if (name === 'co-orchestrator') {
+          merged.permission = {
+            ...existingPerm0,
+            ...COUNCIL_ONLY_TOOLS,
+            close_job: 'allow' as const,
+          };
         } else {
-          // co-council 始终保留 allow（防用户覆盖丢授权）
-          const existingPerm = (merged.permission as Record<string, unknown>) ?? {};
-          merged.permission = { ...existingPerm, council_session: 'allow' as const };
+          merged.permission = { ...existingPerm0, ...COUNCIL_ONLY_TOOLS, ...ORCHESTRATOR_ONLY_TOOLS };
         }
         c.agent[name] = merged;
       }

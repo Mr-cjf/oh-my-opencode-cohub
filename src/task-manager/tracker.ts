@@ -290,17 +290,24 @@ export class TaskTracker {
   }
 
   /**
-   * 清理超时的背景任务（超过 timeoutMs 仍 running 的标为 errored）
+   * 清理超时的背景任务（超过 timeoutMs 仍 running 的标为 errored）。
+   *
+   * 额外收集并返回这些超时任务的 sessionId 列表，供调用方真正执行 session.abort()。
+   *
+   * @returns 被标为 errored 的超时任务的 sessionId 列表（无 sessionId 的任务不包含）
    */
-  cleanupStaleJobs(timeoutMs: number): void {
+  cleanupStaleJobs(timeoutMs: number): string[] {
     const now = Date.now();
+    const staleSessions: string[] = [];
     for (const job of this.jobs.values()) {
       if (job.background && job.status === 'running' && (now - job.createdAt) > timeoutMs) {
         job.status = 'errored';
         this.finalize(job);
+        if (job.sessionId) staleSessions.push(job.sessionId);
       }
     }
     this.persistStats();
+    return staleSessions;
   }
 
   /**
@@ -415,5 +422,37 @@ export class TaskTracker {
       this.finalize(job);
       this.persistStats();
     }
+  }
+
+  /**
+   * 关闭（中止）一个卡住/不必要的子代理后台任务。
+   *
+   * 按 taskId 定位任务：先按 alias 直接查 this.jobs，再按 sessionId 遍历匹配。
+   * 只做状态同步（标记为 cancelled 并 finalize/persist），返回真正的 sessionId 供调用方
+   * 执行 session.abort()——本方法保持无 IO 依赖，便于单测。
+   *
+   * @param taskId 子 session ID（ses_xxx）或任务 alias（如 coe-1）
+   * @returns 找到任务时返回 { sessionId, job }；未找到返回 undefined
+   */
+  abortJob(taskId: string): { sessionId?: string; job: JobRecord } | undefined {
+    let job = this.jobs.get(taskId);
+    if (!job) {
+      for (const j of this.jobs.values()) {
+        if (j.sessionId === taskId) { job = j; break; }
+      }
+    }
+    if (!job) return undefined;
+
+    // 幂等守卫：已是终态的任务不再重复改写状态/统计（重复 abort 直接返回原状态）
+    if (job.status !== 'running') {
+      return { sessionId: job.sessionId || undefined, job };
+    }
+
+    job.status = 'cancelled';
+    job.terminalReconciled = true;
+    this.finalize(job);
+    this.persistStats();
+
+    return { sessionId: job.sessionId || undefined, job };
   }
 }
