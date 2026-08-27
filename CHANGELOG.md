@@ -1,4 +1,160 @@
 # CHANGELOG
+## [1.13.0-beta.1] - 2026-08-27
+
+### 新增
+- `close_job` 工具：主代理可按 Session ID 或任务别名真正中止卡住的子代理后台任务（session.abort + 任务状态同步），仅 co-orchestrator 可调用，其余代理配置层 deny 双层防护
+- 定时清理增强：超时后台任务自动执行真实 abort，不再残留幽灵 running 状态
+- TaskTracker 新增 abortJob 方法与幂等守卫；cleanupStaleJobs 返回超时会话列表
+- 新增 tracker 单元测试 10 用例（pending abort / 重复 abort 幂等 / 终态守卫边界）
+
+### 变更
+- fixer/designer 提示词新增"最小实现自查阶梯"（复用优先、拒绝投机抽象；安全与验证永不省略）
+- oracle 审查清单新增"该删没删的代码"与"过度工程检测"维度
+
+### 移除
+- （无）
+
+## [1.13.0-beta.0] - 2026-08-26
+
+### 新增
+- council 共识机制鲁棒性升级：失败分类、重试决策表、共识检测（≥⌈2n/3⌉）、共享重试预算、前馈降级、自适应参数、协商轮次驱动态收敛
+- 新增工具模块：adaptive-params（自适应调整 retries/timeout，带限幅+滞后防振荡）、model-stats（模型级失败历史）、quality（assessQuality 质量判定）
+- CLI 新增 `stats [N]` 子命令，展示任务成功率/延迟/token
+- summary 策略真正注入截断正文，truncateByTokens 中西文 token 估算
+- TUI 读 State 轮询退避 + 独立 spinner 定时器
+- docs/control-architecture.md：CoHub 多级分层控制架构文档
+- 新增 6 个测试文件覆盖共识/质量/统计/截断逻辑
+
+### 修复
+- council_session 工具权限管控：仅 co-council 可调用，其余 11 代理配置层 deny + 运行时白名单纵深防御（原 orchestrator 等代理会尝试调用并报错）
+- 任务质量回送闭环：子代理结果经 assessQuality 评估后回送到调度
+
+### 变更
+- src/config/loader.ts：Council 类型改为从 council.ts re-export，消除双定义漂移
+- package.json test script 改为 `bun test ./src`（限定测试目录）
+
+### 移除
+- （无）
+
+## [1.12.13] - 2026-08-07
+
+### 修复
+- 修复 messages.transform 仅对最后一条 user 消息做占位修复，恢复含 file-only 历史消息的旧会话时触发 API `messages.N: all messages must have non-empty content` 错误
+
+## [1.12.12] - 2026-08-04
+
+### 变更
+- 子代理模型降级为 Flash：co-oracle、co-council、co-planner 从 deepseek-v4-pro 改为 deepseek-v4-flash（适配 DeepSeek-V4-Flash 2026-07-31 Agent 能力增强，优化扣费）
+
+### 修复
+- 修复 Board 诱导子代理会话复用：非背景任务完成即标记为已调和，不再暴露 session ID
+
+## [1.12.11-beta.0] - 2026-07-31
+
+### 修复
+- 修复 Board 诱导子代理会话复用：非背景任务完成即标记为已调和，不再暴露 session ID
+
+## [1.12.10] - 2026-07-31
+
+### 修复
+- 移除 `coreRulesInjectionText` 注入逻辑，修复 Orchestrator 提示词泄漏到子代理的问题
+
+### 变更
+- orchestrator 提示词优化：增强并行调度策略，新增四阶段并行决策框架，验证阶段 @co-oracle 与 @co-designer 并行
+- orchestrator 提示词增强并行退火机制：执行前检查清单 + 退火警告 + 自检清单并行项
+
+## [1.12.9] - 2026-07-29
+
+### 修复
+- install 后 OpenCode 报 `tool_use ids found without tool_result`：删除 messages.transform 全量兜底逻辑，避免破坏含 tool_use 块的 assistant 消息结构
+- messages.transform 核心规则注入包裹标记（`--- 核心规则提醒 ---`）被发送给 AI 模型：去掉包裹标记，仅保留提示词内容
+- install 架构缺陷：改为 `npm install` 到 `~/.cache/opencode/packages/` 缓存目录，含完整 node_modules 依赖树
+- opencode.json plugin 条目改为带版本号格式 `oh-my-opencode-cohub@x.y.z`，已有条目自动更新版本号
+- orchestrator 角色定义与规则1 流程不一致：补上"委派信息收集"步骤
+- critical_rules 注入可能受覆盖影响：改为注入完整内置常量，不受外部配置覆盖
+- publish CI 因 `package-lock.json` 版本不同步失败：`npm ci` 改为 `npm install`
+
+### 变更
+- 删除 `copyPluginFiles`/`copyRecursive`，不再手动复制 dist 到 plugins 目录
+- 回退 v1.12.7-1.12.8 双保险架构（install 仅写 mode+description，model/variant 由 config hook 注入）
+- CI publish 增加 prerelease 自动检测 `--tag beta`
+
+### 新增
+- `uninstallCoHub` 新增清理 `~/.cache/opencode/packages/` 缓存目录 + 旧 `~/.config/opencode/plugins/` 目录
+- hub config 支持项目级覆盖（`.opencode/oh-my-opencode-cohub.json` > `~/.config/opencode/oh-my-opencode-cohub.json`）
+- 全链路诊断日志：config hook / syncAgentConfig / messages.transform 均打印注入状态预览
+
+## [1.12.6] - 2026-07-29
+
+### 修复
+- 修复子代理 `@` 不可见/无法调用：OpenCode 1.17.20 不从 `return { agent }` 发现代理，改为安装时将全部 12 个 co-* 代理最简模板（mode + description）写入 opencode.json，model/variant 仍由 config hook 从 oh-my-opencode-cohub.json 注入
+
+## [1.12.5] - 2026-07-29
+
+### 修复
+- `co-orchestrator` 主代理条目兜底：opencode.json 保留最小化条目（仅 `mode: primary` + `description`）确保 TAB 切换可靠，其余 11 个子代理完全由插件运行时管理
+- 修正安装提示文案：`已注册到 opencode.json` → `由插件运行时管理`
+
+## [1.12.4] - 2026-07-29
+
+### 修复
+- 纯 slim 架构：opencode.json 不写任何 agent 定义（包括 co-orchestrator），`mode: primary` 由 `return { agent }` 和 `config` hook 运行时提供，消除一切覆盖冲突
+
+## [1.12.3] - 2026-07-29
+
+### 修复
+- 根除 agent model/variant 配置不生效：参照 oh-my-opencode-slim 架构，agent 定义不再写入 opencode.json，改由 config hook 运行时管理。config hook 改为 slim 风格合并策略（插件兜底 + 用户优先），新增 model/variant 防御回填；registerCoHubAgents 简化为安全清理（仅删除纯模板条目，保留用户自定义）
+
+### 变更
+- agent 架构重构：opencode.json 不再写入 agent 定义，消除与插件运行时配置的优先级冲突
+
+## [1.12.2] - 2026-07-28
+
+### 修复
+- 修复 `opencode.json` 中旧版残留的 `model`/`variant` 字段覆盖 `oh-my-opencode-cohub.json` 配置的问题——`registerCoHubAgents` 升级时自动清理，确保配置分离生效
+
+### 变更
+- `install` 重复运行完全幂等：多次安装不会重复清理、不覆盖用户自定义 prompt
+
+## [1.12.1] - 2026-07-28
+
+### 修复
+- 修复 `install` 升级时 `co-orchestrator` 的 `mode` 字段未从 `subagent` 更新为 `primary` 的问题——`registerCoHubAgents` 新增 mode 不匹配检测，自动同步 prompt 和 mode
+
+### 变更
+- `.gitignore` 新增 `*.tgz` 和 `references/` 忽略规则，防止误提交
+
+## [1.12.0] - 2026-07-28
+
+### 新增
+- CLI install 完成自动输出 AI 配置文案，README 新增"方式三：复制文案交给 AI 配置"章节，用户复制粘贴给 AI 即可自动生成 `oh-my-opencode-cohub.json`
+- `writeDefaultConfig()` 智能模型匹配：从 `opencode.json` 动态读取 provider/model，按重型（pro/max/sonnet/opus）/轻型（flash/mini/haiku）/设计/观察者关键词自动分配，无 provider 时生成带 `_comment` 的引导配置
+
+### 修复
+- 代理数量硬编码 13→12 修正（`src/cli/index.ts` 注释和 console.log）
+- README 部首字符错误修复（`执⾏` → `执行`）
+
+### 变更
+- 删除 `DEFAULT_CONFIG` / `DEFAULT_MODELS` 硬编码导出，配置完全由外部文件管理
+- `src/index.ts` 移除所有 agent `config` 中的 `model`/`variant` 硬编码，council 默认 preset 改为空对象
+- `messages.transform` hook 新增防御性编程兜底（空 parts 补全、content 为空设占位、诊断日志）
+- Orchestrator 工作流优化：方案制定由 Orchestrator 自身执行改为委派 @co-planner，规则分析策略移至信息收集步骤
+
+## [1.11.1] - 2026-07-28
+
+### 修复
+- 修复 v1.11.0 中 `install` 覆盖 `opencode.json` 的问题——`readJSON` 不支持 JSONC 格式导致解析失败后创建空对象覆盖全部配置（包括 provider 和 agent）
+- 修复 agent model/variant 与 `opencode.json` 存在冲突的问题
+
+### 变更
+- agent 架构重构：`opencode.json` 只存 agent 结构（description/mode/prompt），model/variant 由 `oh-my-opencode-cohub.json` 唯一管理，消除一切覆盖冲突
+- `co-orchestrator` 改为 `mode: "primary"`，install 自动写入 `default_agent`
+- 移除 v1.11.0 引入的 `syncAgentConfigToOpencode` 同步机制
+
+## [1.11.0] - 2026-07-28
+
+### 新增
+- 插件启动时自动将 `oh-my-opencode-cohub.json` 中 agent model/variant 同步写入 `opencode.json`，解决 OpenCode 内部配置合并优先级导致用户覆盖不生效的问题（采用原子写入、类型守卫、诊断日志）
 
 ## [1.10.3] - 2026-07-25
 

@@ -35,8 +35,19 @@ jobs:
           fi
           echo "✅ 版本一致: v$TAG_VERSION"
 
-      - run: npm ci
+      - run: npm install
 
-      - run: npm run build
+      - run: bun run build
 
-      - run: npm publish --provenance --access public
+      - name: 发布 npm（自动检测 prerelease tag）
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if echo "$VERSION" | grep -q '\-'; then
+            TAG=$(echo "$VERSION" | sed 's/.*-\([a-z]*\).*/\1/')
+            if [ -z "$TAG" ]; then TAG="next"; fi
+            echo "📦 发布预发布版本 $VERSION，tag: $TAG"
+            npm publish --provenance --access public --tag "$TAG"
+          else
+            echo "📦 发布正式版本 $VERSION"
+            npm publish --provenance --access public
+          fi

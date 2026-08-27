@@ -13,3 +13,9 @@ dist/
 
 # OpenCode 源码参考（不提交）
 opencode-source/
+
+# 打包产物
+*.tgz
+
+# 参考资料
+references/

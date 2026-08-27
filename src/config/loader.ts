@@ -2,26 +2,13 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import type { ContextConfig } from '../context/types';
+import type { QualityConfig } from '../task-manager/quality';
 import { DEFAULT_CONTEXT_CONFIG } from '../context/types';
 
-/** 单个 councillor 配置 */
-export interface CouncillorConfig {
-  model: string;
-  variant?: string;
-  prompt?: string;
-}
-
-export interface CouncilPreset {
-  [councillorName: string]: CouncillorConfig;
-}
-
-export interface CouncilConfig {
-  presets: Record<string, CouncilPreset>;
-  timeout?: number;
-  default_preset?: string;
-  councillor_execution_mode?: 'parallel' | 'serial';
-  councillor_retries?: number;
-}
+// P2-4: Council 相关类型统一复用 council.ts 定义，消除双定义漂移
+//（纯类型 import + re-export，运行时零依赖；council.ts 不 import loader.ts，无循环依赖）
+import type { CouncilConfig, CouncilPreset, CouncillorConfig } from '../tools/council';
+export type { CouncilConfig, CouncilPreset, CouncillorConfig };
 
 /** 用户配置中单个代理的覆盖项 */
 export interface AgentOverride {
@@ -34,38 +21,47 @@ export interface CoHubConfig {
   agents?: Record<string, AgentOverride>;
   council?: CouncilConfig;
   context?: Partial<ContextConfig>;  // 用户可覆盖部分字段
+  /** 质量回送配置（P0-1 负反馈闭环，默认开启） */
+  quality?: Partial<QualityConfig>;
 }
 
 /** 配置文件路径 */
-const CONFIG_PATH = path.join(os.homedir(), '.config', 'opencode', 'oh-my-opencode-cohub.json');
+const USER_CONFIG_PATH = path.join(os.homedir(), '.config', 'opencode', 'oh-my-opencode-cohub.json');
 
-/** 加载用户配置 */
-export function loadCoHubConfig(): CoHubConfig {
+/** 加载用户配置（项目级优先覆盖用户级） */
+export function loadCoHubConfig(projectDir?: string): CoHubConfig {
+  const base = readJSON(USER_CONFIG_PATH) as CoHubConfig;
+  if (!projectDir) return base;
+
+  const projectPath = path.join(projectDir, '.opencode', 'oh-my-opencode-cohub.json');
+  const project = readJSON(projectPath) as CoHubConfig;
+  if (!project || Object.keys(project).length === 0) return base;
+
+  // 项目级覆盖用户级（shallow merge per-agent）
+  const merged: CoHubConfig = { ...base };
+  if (project.agents) {
+    merged.agents = { ...base.agents, ...project.agents };
+  }
+  if (project.council) {
+    merged.council = project.council;
+  }
+  if (project.context) {
+    merged.context = { ...base.context, ...project.context };
+  }
+  if (project.quality) {
+    merged.quality = { ...base.quality, ...project.quality };
+  }
+  return merged;
+}
+
+function readJSON(filePath: string): Record<string, unknown> | null {
   try {
-    if (!fs.existsSync(CONFIG_PATH)) return {};
-    const raw = fs.readFileSync(CONFIG_PATH, 'utf-8');
-    return JSON.parse(raw) as CoHubConfig;
+    if (!fs.existsSync(filePath)) return {};
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    return JSON.parse(raw) as Record<string, unknown>;
   } catch {
     return {};
   }
 }
-
-/** 示例配置模板 */
-export const DEFAULT_CONFIG: CoHubConfig = {
-  agents: {
-    'co-orchestrator': { model: 'deepseek/deepseek-v4-pro', variant: 'max' },
-    'co-oracle': { model: 'deepseek/deepseek-v4-pro', variant: 'max' },
-    'co-librarian': { model: 'deepseek/deepseek-v4-flash', variant: 'low' },
-    'co-explorer': { model: 'deepseek/deepseek-v4-flash', variant: 'low' },
-    'co-designer': { model: 'minimax/MiniMax-M3', variant: 'medium' },
-    'co-fixer': { model: 'deepseek/deepseek-v4-flash', variant: 'high' },
-    'co-observer': { model: 'codermxtest/gpt-5.5', variant: 'low' },
-    'co-council': { model: 'deepseek/deepseek-v4-pro', variant: 'high' },
-    'co-rule-user': { model: 'deepseek/deepseek-v4-flash', variant: 'medium' },
-    'co-rule-project': { model: 'deepseek/deepseek-v4-flash', variant: 'medium' },
-    'co-rule-app': { model: 'deepseek/deepseek-v4-flash', variant: 'medium' },
-    'co-planner': { model: 'deepseek/deepseek-v4-pro', variant: 'high' },
-  },
-};
 
 export { DEFAULT_CONTEXT_CONFIG };

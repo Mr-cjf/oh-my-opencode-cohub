@@ -14,31 +14,17 @@ import { RULE_APP_PROMPT } from './prompts/rule-app';
 import { PLANNER_PROMPT } from './prompts/planner';
 import { CHINESE_LANGUAGE_INSTRUCTION } from './instructions/chinese';
 import { TaskTracker } from './task-manager/tracker';
+import { assessQuality, isQualityEnabled } from './task-manager/quality';
 import { ContextEngine } from './context/engine';
 import { resolveStrategy } from './context/strategy';
 import type { ContextStrategy } from './context/types';
 import { loadCoHubConfig, type AgentOverride } from './config/loader';
 import { createCouncilTool, CouncilManager } from './tools/council';
+import { createCloseJobTool } from './tools/job-control';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { appendLog } from './utils/log.js';
-
-/** 默认模型配置 */
-const DEFAULT_MODELS: Record<string, string> = {
-  orchestrator: 'deepseek/deepseek-v4-pro',
-  oracle: 'deepseek/deepseek-v4-pro',
-  librarian: 'deepseek/deepseek-v4-flash',
-  explorer: 'deepseek/deepseek-v4-flash',
-  designer: 'minimax/MiniMax-M3',
-  fixer: 'deepseek/deepseek-v4-flash',
-  observer: 'codermxtest/gpt-5.5',
-  council: 'deepseek/deepseek-v4-pro',
-  'rule-user': 'deepseek/deepseek-v4-flash',
-  'rule-project': 'deepseek/deepseek-v4-flash',
-  'rule-app': 'deepseek/deepseek-v4-flash',
-  planner: 'deepseek/deepseek-v4-pro',
-};
 
 /** 中文提示词映射表 */
 const CHINESE_PROMPTS: Record<string, string> = {
@@ -177,8 +163,8 @@ const CoHubPlugin: Plugin = async (input, options) => {
       if (!fs.existsSync(STATE_DIR)) {
         fs.mkdirSync(STATE_DIR, { recursive: true });
       }
-      const configs = agents.map(a => {
-        const modelStr = a.config.model as string;
+      const configs = agents.filter(a => (a.config as Record<string, unknown>).model).map(a => {
+        const modelStr = (a.config as Record<string, unknown>).model as string;
         const parts = modelStr.split('/');
         const provider = parts.length > 1 ? parts[0] : 'default';
         const shortModel = parts.length > 1 ? parts.slice(1).join('/') : modelStr;
@@ -186,11 +172,14 @@ const CoHubPlugin: Plugin = async (input, options) => {
           name: a.name,
           description: a.description,
           model: shortModel,
-          variant: a.config.variant || null,
+          variant: (a.config as Record<string, unknown>).variant || null,
           provider,
         };
       });
       fs.writeFileSync(AGENT_CONFIG_FILE, JSON.stringify({ updatedAt: Date.now(), agents: configs }), 'utf-8');
+      void appendLog('syncAgentConfig', `已同步 ${configs.length} 个 agent: ${JSON.stringify(
+        configs.map(c => ({ name: c.name, model: c.model, variant: c.variant })),
+      )}`);
     } catch { /* 静默失败 */ }
   }
 
@@ -198,42 +187,40 @@ const CoHubPlugin: Plugin = async (input, options) => {
   const agents = [
     {
       name: 'co-orchestrator',
-      config: { mode: 'primary', model: 'deepseek/deepseek-v4-pro', variant: 'max', prompt: ORCHESTRATOR_PROMPT },
+      config: { mode: 'primary', prompt: ORCHESTRATOR_PROMPT },
     },
     {
       name: 'co-oracle',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-pro', variant: 'max', temperature: 0.1, prompt: ORACLE_PROMPT },
+      config: { mode: 'subagent', temperature: 0.1, prompt: ORACLE_PROMPT },
     },
     {
       name: 'co-librarian',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: LIBRARIAN_PROMPT },
+      config: { mode: 'subagent', prompt: LIBRARIAN_PROMPT },
     },
     {
       name: 'co-explorer',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: EXPLORER_PROMPT },
+      config: { mode: 'subagent', prompt: EXPLORER_PROMPT },
     },
     {
       name: 'co-designer',
-      config: { mode: 'subagent', model: 'minimax/MiniMax-M3', variant: 'medium', prompt: DESIGNER_PROMPT },
+      config: { mode: 'subagent', prompt: DESIGNER_PROMPT },
     },
     {
       name: 'co-fixer',
       mode: 'subagent',
       description: '执行者——代码修改、构建、测试',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', variant: 'high', prompt: FIXER_PROMPT },
+      config: { mode: 'subagent', prompt: FIXER_PROMPT },
     },
     {
       name: 'co-observer',
       description: '观察者——图片/PDF/截图视觉分析',
-      config: { mode: 'subagent', model: 'codermxtest/gpt-5.5', prompt: OBSERVER_PROMPT },
+      config: { mode: 'subagent', prompt: OBSERVER_PROMPT },
     },
     {
       name: 'co-council',
       description: '多模型共识——并行 LLM 综合',
       config: {
         mode: 'subagent',
-        model: 'deepseek/deepseek-v4-pro',
-        variant: 'high',
         prompt: COUNCIL_PROMPT,
         permission: { council_session: 'allow' as const },
       },
@@ -241,37 +228,39 @@ const CoHubPlugin: Plugin = async (input, options) => {
     {
       name: 'co-rule-user',
       description: '用户规范分析——~/.config/opencode/AGENTS.md',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: RULE_USER_PROMPT },
+      config: { mode: 'subagent', prompt: RULE_USER_PROMPT },
     },
     {
       name: 'co-rule-project',
       description: '项目规范分析——项目 AGENTS.md',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: RULE_PROJECT_PROMPT },
+      config: { mode: 'subagent', prompt: RULE_PROJECT_PROMPT },
     },
     {
       name: 'co-rule-app',
       description: '应用规则分析——.opencode/rules/*.md',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-flash', prompt: RULE_APP_PROMPT },
+      config: { mode: 'subagent', prompt: RULE_APP_PROMPT },
     },
     {
       name: 'co-planner',
       description: '方案制定——综合需求+信息+规范输出任务分解',
-      config: { mode: 'subagent', model: 'deepseek/deepseek-v4-pro', variant: 'high', prompt: PLANNER_PROMPT },
+      config: { mode: 'subagent', prompt: PLANNER_PROMPT },
     },
   ];
 
   // ===== 加载用户配置覆盖 =====
-  const userConfig = loadCoHubConfig();
+  const userConfig = loadCoHubConfig(projectDir);
   if (userConfig.agents) {
     for (const agent of agents) {
       const override = userConfig.agents[agent.name];
       if (override) {
-        if (override.model) agent.config.model = override.model;
+        if (override.model) (agent.config as Record<string, unknown>).model = override.model;
         if (override.variant) (agent.config as Record<string, unknown>).variant = override.variant;
         if (override.prompt) agent.config.prompt = override.prompt;
       }
     }
   }
+
+  syncAgentConfig();  // 写入 agent 配置供 TUI 面板读取（覆盖完成后执行）
 
   // ===== 应用文件级覆盖（优先级：文件替换 > 文件追加 > JSON 配置 > 内置常量） =====
   for (const agent of agents) {
@@ -285,15 +274,6 @@ const CoHubPlugin: Plugin = async (input, options) => {
     }
   }
 
-  // ===== 核心规则提取（利用 recency bias 对抗长会话注意力衰减） =====
-  const orchestratorAgent = agents.find(a => a.name === 'co-orchestrator');
-  const criticalRulesMatch = (orchestratorAgent?.config.prompt as string | undefined)?.match(
-    /<critical_rules>([\s\S]*?)<\/critical_rules>/
-  );
-  const coreRulesInjectionText = criticalRulesMatch
-    ? `\n\n--- 核心规则提醒（本轮注入，不持久化） ---\n<critical_rules>${criticalRulesMatch[1]}</critical_rules>\n--- 注入结束 ---`
-    : null;
-
   // ===== Council 初始化（无配置时使用内置默认预设） =====
   const DEFAULT_COUNCIL_CONFIG = {
     default_preset: 'default',
@@ -301,11 +281,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
     councillor_execution_mode: 'parallel' as const,
     councillor_retries: 3,
     presets: {
-      default: {
-        alpha: { model: 'deepseek/deepseek-v4-pro', variant: 'max' },
-        beta: { model: 'deepseek/deepseek-v4-flash', variant: 'high' },
-        gamma: { model: 'minimax/MiniMax-M3', variant: 'medium' },
-      },
+      default: {},  // 空预设，完全依赖 oh-my-opencode-cohub.json 配置
     },
   };
   // 初始化上下文引擎
@@ -315,8 +291,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
   const councilConfig = userConfig.council ?? DEFAULT_COUNCIL_CONFIG;
   const councilManager = new CouncilManager(input.client, input.directory, councilConfig);
   const councilTools = createCouncilTool(input, councilManager);
-
-  syncAgentConfig();  // 启动时立即写入 agent 配置供 TUI 面板读取
+  const jobTools = createCloseJobTool(input, tracker, () => syncTrackerState(tracker.currentParentSessionId));
 
   // ===== 辅助：从 tool output 中提取子任务 session ID =====
   function extractChildSessionId(output: unknown): string | undefined {
@@ -353,7 +328,21 @@ const CoHubPlugin: Plugin = async (input, options) => {
   const STALE_TIMEOUT_MS = 30 * 60 * 1000;
   const cleanupTimer = setInterval(() => {
     try {
-      tracker.cleanupStaleJobs(STALE_TIMEOUT_MS);
+      const staleSessions = tracker.cleanupStaleJobs(STALE_TIMEOUT_MS);
+      for (const sid of staleSessions) {
+        // SDK 默认 ThrowOnError=false：HTTP 失败会 resolve 出 { data, error } 而非 reject，
+        // 显式检查 res.error；catch 仅兜底网络层异常
+        void (async () => {
+          try {
+            const res = await input.client.session.abort({ path: { id: sid } });
+            if (res.error) {
+              appendLog('cleanupStaleJobs', `abort stale session ${sid} 失败`, res.error);
+            }
+          } catch (err) {
+            appendLog('cleanupStaleJobs', `abort stale session ${sid} 失败`, err);
+          }
+        })();
+      }
     } catch (err) {
       appendLog('cleanupStaleJobs', '定时清理过期任务失败', err);
     }
@@ -367,12 +356,30 @@ const CoHubPlugin: Plugin = async (input, options) => {
 
   // ===== 构建 agent 对象（供直接返回 + config hook 双重注册） =====
   const agentConfigs: Record<string, unknown> = {};
+  const COUNCIL_ONLY_TOOLS = { council_session: 'deny' as const };
+  // close_job 仅 co-orchestrator 可用；co-council 不可调用（co-council 用 council_session）
+  const ORCHESTRATOR_ONLY_TOOLS = { close_job: 'deny' as const };
   for (const agent of agents) {
-    agentConfigs[agent.name] = {
+    const base = {
       ...agent.config,
       name: agent.name,
       description: agent.description,
-    };
+    } as Record<string, unknown>;
+    // 权限管控：
+    // - council_session 仅 co-council 可用，非 co-council 显式 deny
+    // - close_job 仅 co-orchestrator 可用，非 co-orchestrator 显式 deny
+    // 若 config 已有 permission 则合并（保留已有键）。
+    const existingPermission = (base.permission as Record<string, unknown> | undefined) ?? {};
+    if (agent.name !== 'co-council') {
+      base.permission = { ...existingPermission, ...COUNCIL_ONLY_TOOLS };
+    }
+    if (agent.name !== 'co-orchestrator') {
+      base.permission = { ...(base.permission as Record<string, unknown>), ...ORCHESTRATOR_ONLY_TOOLS };
+    } else {
+      // co-orchestrator 显式写回 allow：不依赖"无条目默认放行"，防未来全局权限策略收紧时误拦
+      base.permission = { ...(base.permission as Record<string, unknown>), close_job: 'allow' as const };
+    }
+    agentConfigs[agent.name] = base;
   }
 
   return {
@@ -381,19 +388,68 @@ const CoHubPlugin: Plugin = async (input, options) => {
     // 方式一：直接返回 agent 字段（HTTP 服务器模式更可靠）
     agent: agentConfigs,
 
-    // 工具：council_session（多模型并行共识）
-    tool: councilTools,
+    // 工具：council_session（多模型并行共识）+ close_job（中止卡住子任务）
+    tool: { ...councilTools, ...jobTools },
 
     // 方式二：config hook 再次写入（确保兼容所有模式）
     config: async (cfg: Record<string, unknown>) => {
-      const c = cfg as { agent?: Record<string, unknown> };
+      const c = cfg as { agent?: Record<string, unknown>; default_agent?: string };
       c.agent ??= {};
-      for (const [name, config] of Object.entries(agentConfigs)) {
-        c.agent[name] = config;
+
+      // 兜底设置默认代理（与 opencode.json 的 default_agent 互补）
+      if (!c.default_agent) {
+        c.default_agent = 'co-orchestrator';
       }
+
+      // 合并策略：
+      // - opencode.json 优先（用户手动字段：mode/tools/temperature 等）
+      // - hub config 的 model/variant 优先（oh-my-opencode-cohub.json 是配置源）
+      // install 会将 hub config 同步写入 opencode.json，但用户可能只更新 hub config 未重装
+      for (const [name, pluginConfig] of Object.entries(agentConfigs)) {
+        const existing = c.agent[name] as Record<string, unknown> | undefined;
+        const pc = pluginConfig as Record<string, unknown>;
+        const merged: Record<string, unknown> = existing
+          ? { ...pc, ...existing }
+          : { ...pc };
+        // hub config 的 model/variant 总是覆盖 opencode.json 中的值
+        if (pc.model) merged.model = pc.model;
+        if (pc.variant) merged.variant = pc.variant;
+        // permission 键级合并：保留用户对具体工具（如 bash）的授权，
+        // 但 council_session / close_job 按代理身份键级强制修正（防浅合并误覆盖）：
+        // - co-orchestrator：council_session deny、close_job allow
+        // - co-council：council_session allow、close_job deny
+        // - 其余代理：双 deny
+        const existingPerm0 = (merged.permission as Record<string, unknown>) ?? {};
+        if (name === 'co-council') {
+          merged.permission = { ...existingPerm0, council_session: 'allow' as const, ...ORCHESTRATOR_ONLY_TOOLS };
+        } else if (name === 'co-orchestrator') {
+          merged.permission = {
+            ...existingPerm0,
+            ...COUNCIL_ONLY_TOOLS,
+            close_job: 'allow' as const,
+          };
+        } else {
+          merged.permission = { ...existingPerm0, ...COUNCIL_ONLY_TOOLS, ...ORCHESTRATOR_ONLY_TOOLS };
+        }
+        c.agent[name] = merged;
+      }
+
       try { fs.writeFileSync(path.join(STATE_DIR, 'config-hook-ran.json'), JSON.stringify({ ran: true, count: agents.length })); } catch (err) {
-        appendLog('config', '双重注册写入文件失败', err);
+        void appendLog('config', '双重注册写入文件失败', err);
       }
+      void appendLog('config.hook', `config hook 注入完成: ${JSON.stringify(
+        Object.entries(agentConfigs).map(([name, cfg]) => {
+          const c = cfg as Record<string, unknown>;
+          const prompt = typeof c.prompt === 'string' ? c.prompt : '';
+          return {
+            name,
+            promptLen: prompt.length,
+            promptPreview: prompt.slice(0, 120),
+            hasModel: !!c.model,
+            hasVariant: !!c.variant,
+          };
+        }),
+      )}`);
     },
 
     'tool.execute.before': async (input, output) => {
@@ -428,7 +484,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
                 '**当前任务**: ' + description + '\n';
               // prompt 是子代理实际看到的消息，description 只是 session 标题
               const targetField = typeof output.args.prompt === 'string' ? 'prompt' : 'description';
-              output.args[targetField] = (targetField === 'prompt' ? output.args.prompt : description) + contextBlock;
+              output.args[targetField] = ((targetField === 'prompt' ? output.args.prompt : description) ?? '') + contextBlock;
 
 
               // 填充上下文（同步等待完成，确保子代理启动前上下文已就绪）
@@ -505,10 +561,30 @@ const CoHubPlugin: Plugin = async (input, options) => {
           tracker.updateByChildSessionId(sessionId, 'completed');
           syncTrackerState(tracker.currentParentSessionId);
 
-          // 新增：捕获子代理结果用于依赖传播
+          // 新增：捕获子代理结果用于依赖传播 + 质量回送（P0-1 负反馈闭环）
           const job = tracker.getJobBySessionId(sessionId);
           if (job) {
-            void contextEngine.captureResult(sessionId, job.alias, job.agent);
+            void contextEngine
+              .captureResult(sessionId, job.alias, job.agent)
+              .then((captured) => {
+                if (!captured) return;
+                // 质量判定：默认开启但保守——低分只标记（写回 JobRecord.quality），不改变任务成败
+                if (!isQualityEnabled(userConfig.quality)) return;
+                const quality = assessQuality({
+                  output: captured.output,
+                  decisions: captured.decisions,
+                  latencyMs: Date.now() - job.createdAt,
+                  tokens: captured.tokens,
+                });
+                tracker.updateQuality(sessionId, {
+                  score: quality.score,
+                  ...(quality.failureCategory ? { failureCategory: quality.failureCategory } : {}),
+                  ...(quality.latencyMs !== undefined ? { latencyMs: quality.latencyMs } : {}),
+                  ...(quality.tokens ? { tokens: quality.tokens } : {}),
+                });
+                syncTrackerState(tracker.currentParentSessionId);
+              })
+              .catch((err) => appendLog('event', '质量回送失败', err));
           }
         } else if (e.type === 'session.deleted') {
           tracker.updateByChildSessionId(sessionId, 'errored');
@@ -527,6 +603,27 @@ const CoHubPlugin: Plugin = async (input, options) => {
       try {
         if (!output.messages || !Array.isArray(output.messages)) return;
 
+        // 诊断 + 修复：对所有 user 消息确保有 text part（防止 API 报 empty content）
+        if (output.messages) {
+          for (let d = 0; d < output.messages.length; d++) {
+            const msg = output.messages[d];
+            if (msg.info?.role !== 'user') continue; // 不碰 assistant/system 消息
+            const parts = msg.parts;
+            if (!parts || !Array.isArray(parts) || parts.length === 0) {
+              msg.parts = [{ type: 'text', text: ' ' }] as any;
+              void appendLog('messages.transform',
+                `⚠️ 消息[${d}] role=user parts为空，已推入占位text part`);
+            } else {
+              const hasTextPart = parts.some(p => p.type === 'text');
+              if (!hasTextPart) {
+                (msg.parts as any[]).push({ type: 'text', text: ' ' });
+                void appendLog('messages.transform',
+                  `⚠️ 消息[${d}] role=user parts无text类型(types=[${parts.map(p => p.type).join(',')}])，已推入占位text part`);
+              }
+            }
+          }
+        }
+
         // 从最后一条 user 消息提取 sessionID
         let lastUserMsg: (typeof output.messages)[number] | undefined;
         let sessionID: string | undefined;
@@ -541,8 +638,17 @@ const CoHubPlugin: Plugin = async (input, options) => {
 
         if (!lastUserMsg) return;
 
-        // ↓ 新增：防御 parts 不存在的情况
-        if (!lastUserMsg.parts || !Array.isArray(lastUserMsg.parts)) return;
+        // 防御：parts 不存在、非数组、或为空数组时，推入占位 text part
+        if (!lastUserMsg.parts || !Array.isArray(lastUserMsg.parts) || lastUserMsg.parts.length === 0) {
+          lastUserMsg.parts = [{ type: 'text', text: ' ' }] as any;
+          void appendLog('messages.transform',
+            `⚠️ lastUserMsg parts为空，已推入占位text part (session=${sessionID?.slice(0,20) ?? '?'})`);
+        } else if (!lastUserMsg.parts.some(p => p.type === 'text')) {
+          // parts 存在但没有任何 text 类型，推入一个空 text part
+          lastUserMsg.parts.push({ type: 'text', text: ' ' } as any);
+          void appendLog('messages.transform',
+            `⚠️ lastUserMsg parts无text类型，已推入占位text part (session=${sessionID?.slice(0,20) ?? '?'})`);
+        }
 
         // 1. 注入 Background Job Board
         const board = tracker.getBoardText();
@@ -555,16 +661,23 @@ const CoHubPlugin: Plugin = async (input, options) => {
             }
           }
         }
-        // 3. 注入核心规则（利用 recency bias 对抗长会话注意力衰减）
-        if (coreRulesInjectionText) {
-          for (let k = lastUserMsg.parts.length - 1; k >= 0; k--) {
-            const part = lastUserMsg.parts[k];
-            if (part.type === 'text') {
-              part.text = (part.text || '') + coreRulesInjectionText;
-              break;
+
+
+        // 兜底：注入完成后若 lastUserMsg content 仍为空，设非空占位
+        {
+          let userContent = '';
+          for (const p of lastUserMsg.parts ?? []) {
+            if (p.type === 'text') userContent += (p.text ?? '');
+          }
+          if (!userContent.trim()) {
+            for (const p of lastUserMsg.parts ?? []) {
+              if (p.type === 'text') { p.text = ' '; break; }
             }
+            void appendLog('messages.transform',
+              `⚠️ 注入后 content 为空，已设空格占位 (session=${sessionID?.slice(0,20) ?? '?'})`);
           }
         }
+
       } catch (err) {
         appendLog('messages.transform', 'hook 失败', err);
       }
