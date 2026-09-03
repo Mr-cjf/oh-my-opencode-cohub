@@ -101,19 +101,29 @@ export const DEFAULT_RETRY_POLICIES: Record<string, RetryPolicy> = {
 // ====== AgentContract ======
 
 export interface AgentContract {
-  /** 代理承诺输出的结构化数据 */
-  outputs: Record<string, unknown>;
-  /** 输出的数据模式描述 */
-  schema?: Record<string, unknown>;
+  keyResult: string;
+  decisions: string[];
+  filesChanged: string[];
+  validationStatus: 'passed' | 'failed' | 'unknown';
+  validationDetail?: string;
+  pendingItems: string[];
+  warnings: string[];
 }
 
 // ====== ConcurrencyConfig ======
 
 export interface ConcurrencyConfig {
-  /** 最大并行任务数 */
-  maxConcurrent: number;
-  /** 是否允许同级任务并行 */
-  allowParallel: boolean;
-  /** 任务队列最大长度 */
-  maxQueueSize?: number;
+  maxConcurrency: number;
+}
+
+export const DEFAULT_CONCURRENCY: ConcurrencyConfig = {
+  maxConcurrency: 5,
+};
+
+// ====== OrchestrationConfig ======
+
+export interface OrchestrationConfig {
+  retryPolicies?: Record<string, RetryPolicy>;
+  concurrency?: ConcurrencyConfig;
+  defaultMaxRetries?: number;
 }
