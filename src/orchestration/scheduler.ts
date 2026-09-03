@@ -8,7 +8,7 @@ export class Scheduler {
   private maxConcurrency: number;
   private dispatched = new Set<string>();  // 已派遣但未完成的任务
 
-  constructor(engine: OrchestrationEngine, maxConcurrency: number = 5) {
+  constructor(engine: OrchestrationEngine, maxConcurrency: number = 20) {
     this.engine = engine;
     this.maxConcurrency = maxConcurrency;
   }

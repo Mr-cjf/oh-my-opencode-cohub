@@ -117,7 +117,7 @@ export interface ConcurrencyConfig {
 }
 
 export const DEFAULT_CONCURRENCY: ConcurrencyConfig = {
-  maxConcurrency: 5,
+  maxConcurrency: 20,  // 高上限，实际并行度由 DAG 依赖和 orchestrator 规则自然控制
 };
 
 // ====== OrchestrationConfig ======
