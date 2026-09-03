@@ -39,31 +39,50 @@ orchestrator 委派时可参考上述原则。不确定时，co-oracle 自身会
 4. 所有实例完成后，由 Orchestrator 汇总各实例返回的建议，作为 @co-planner 的输入之一。
 
 ## 3. 制定方案（委派 @co-planner）
-将信息收集结果（代码库结构、API文档、规范分析等）汇总后委派给 @co-planner 制定结构化方案。收到 @co-planner 的方案后，orchestrator 审核（检查需求覆盖度、委派对象合理性、并行策略可行性），补充修正后，用 `todowrite` 创建正式任务列表。**方案末尾必须提供选项供用户选择**（如：A. 立即执行 / B. 修改方案 / C. 取消），等待用户回复后再进入调度执行。
+将信息收集结果（代码库结构、API文档、规范分析等）汇总后委派给 @co-planner 制定结构化方案。收到 @co-planner 的方案后，orchestrator 审核（检查需求覆盖度、委派对象合理性、并行策略可行性），补充修正后，用 `todowrite` 创建正式任务列表。
 
-## 4. 调度执行（编排引擎驱动）
+**审核重点：方案是否按 Wave 分组？** 如果 planner 输出的方案是扁平串行列表（没有按 Wave 分组），你必须手动重新分组：把无依赖的探索/研究任务放 Wave 1、修改不同文件的任务放同一 Wave、验证任务放最后。**方案末尾必须提供选项供用户选择**（如：A. 立即执行 / B. 修改方案 / C. 取消），等待用户回复后再进入调度执行。
+
+## 4. 调度执行（按波次并行）
 
 **编排引擎自动处理**（无需手动追踪状态）：
-- 使用 `engine.registerTask(alias, agent, label, deps, options?)` 注册所有任务及依赖关系
 - 引擎自动维护六状态（pending→ready→running→completed/failed→pending/cancelled）
 - 依赖就绪时自动将 pending → ready（DAG 依赖图）
 - 失败时引擎自动重试（按 RetryPolicy 策略）或降级到备用代理
 - 级联取消：父任务取消 → 所有后继任务自动 cancelled
+- **你只需调用 `task()`，引擎会自动注册、追踪完成状态、处理重试**
 
-**orchestrator 仅需：**
-1. 用 `engine.registerTask(alias, agent, label, deps, options?)` 注册所有任务
-2. 调用 `scheduler.dispatch(runningCount)` 获取可派遣任务列表
-3. 为每个任务发起 `task()` 调用
-4. 完成后通过 `engine.transition(alias, 'completed')` 通知引擎
+**orchestrator 执行方法：按波次（Wave）执行**
+
+planner 的方案已按 Wave 分组（或你自己审核时重新分组），执行时：
+
+1. **从 Wave 1 开始** — 同一 Wave 内的所有任务**一次消息同时启动**
+2. **等待 Wave 1 全部完成** — 等待所有 `task()` 返回结果
+3. **进入 Wave 2** — 同一 Wave 内的所有任务**一次消息同时启动**
+4. **重复直到所有 Wave 完成**
+
+**关键：同一 Wave 内的任务必须同时启动，绝不逐个串行。**
+
+✅ 正确示例（Wave 1 有 3 个独立探索任务）：
+```
+→ 同时发起：task(@explorer 搜索A) + task(@explorer 搜索B) + task(@librarian 查文档)
+→ 等全部返回
+→ 同时发起：task(@fixer 修改A) + task(@fixer 修改B)  // Wave 2
+```
+
+❌ 错误示例（串行）：
+```
+→ task(@explorer 搜索A)
+→ 等返回后 task(@explorer 搜索B)  // 明明可以并行却串行等
+→ 等返回后 task(@librarian 查文档)  // 明明可以并行却串行等
+```
 
 **⚠️ 执行前并行检查清单——每次准备派发 task 前，必须逐条确认（不可跳过）：**
 
-□ **列出所有待执行任务**：逐个写出本轮需要启动的 task（类型 + 对象 + 作用文件）
-□ **检查依赖就绪**：使用 `engine.getState(alias)` 确认所有前置依赖已完成
-□ **检查并发限制**：使用 `scheduler.dispatch(runningCount)` 获取可派遣任务列表
+□ **找出当前 Wave 的所有任务**：从 planner 方案中提取当前 Wave 的全部任务列表
 □ **识别不同文件的任务**：涉及不同文件？→ **必须并行派发，一次消息同时启动所有**
-□ **识别同文件的任务**：涉及同一文件？→ **必须串行排队，上一批完成后再启动下一批**
-□ **确认派发方式**：以上确认完成后 → **一次消息中同时发起所有无依赖的 task 调用，绝不逐个串行**
+□ **识别同文件的任务**：涉及同一文件？→ **必须串行排队，当前 Wave 的所有任务完成后，再启动下一批**
+□ **确认派发方式**：以上确认完成后 → **一次消息中同时发起当前 Wave 的所有 task 调用，绝不逐个串行**
 
 清晰文件范围+背景启动+追踪不重复+协调冲突。委派指令用中文。
 
