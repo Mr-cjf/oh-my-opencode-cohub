@@ -25,6 +25,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { appendLog } from './utils/log.js';
+import { createOrchestrationLayer } from './orchestration';
 
 /** 中文提示词映射表 */
 const CHINESE_PROMPTS: Record<string, string> = {
@@ -136,6 +137,8 @@ const CoHubPlugin: Plugin = async (input, options) => {
   const promptOverrides = { ...configOverrides, ...fileOverrides };
 
   const tracker = new TaskTracker();
+  const orchestrationLayer = createOrchestrationLayer(tracker, {});
+  let _lastAlias = ''; // 用于 tool.execute.before → after 传递 alias
 
   // ===== TUI 状态同步 =====
   const STATE_DIR = path.join(os.homedir(), '.local', 'share', 'opencode', 'storage', 'oh-my-opencode-cohub');
@@ -464,13 +467,37 @@ const CoHubPlugin: Plugin = async (input, options) => {
           if (typeof args.task_id === 'string' && args.task_id !== '' && !args.task_id.startsWith('ses_')) {
             delete output.args.task_id;
           }
-          tracker.registerBeforeTask(input.sessionID, {
+          const alias = tracker.registerBeforeTask(input.sessionID, {
             description,
             subagent_type: subagentType,
             task_id: (typeof output.args.task_id === 'string' && output.args.task_id.startsWith('ses_')) ? output.args.task_id : undefined,
             background: typeof args.background === 'boolean' ? args.background : undefined,
           });
+          _lastAlias = alias;
           syncTrackerState(input.sessionID ?? '');
+
+          // 注册到 orchestration engine
+          if (orchestrationLayer && subagentType && description) {
+            try {
+              orchestrationLayer.engine.registerTask(
+                alias,
+                subagentType,
+                description,
+                [], // deps — 由 orchestrator 通过 prompt 指定
+              );
+              // 注入契约上下文到 prompt
+              const targetField = output.args?.prompt ? 'prompt' : 'description';
+              if (output.args?.[targetField] && typeof output.args[targetField] === 'string') {
+                output.args[targetField] += '\n' + orchestrationLayer.contractMgr.buildPrompt({
+                  goal: description,
+                  prerequisites: [],
+                  constraints: [],
+                });
+              }
+            } catch (e) {
+              appendLog('orchestration', 'registerTask error', e);
+            }
+          }
 
           // 新增：构建上下文
           if (subagentType) {
@@ -544,6 +571,23 @@ const CoHubPlugin: Plugin = async (input, options) => {
           const childSessionId = extractChildSessionId(output);
           tracker.updateAfterTask(input.sessionID, 'completed', childSessionId);
           syncTrackerState(input.sessionID ?? '');
+
+          // 同步 orchestration 状态
+          if (orchestrationLayer && input.tool === 'task') {
+            try {
+              // 从 output 中提取子代理结果并提取契约
+              if (typeof output === 'string') {
+                const contract = orchestrationLayer.contractMgr.extract(output);
+                if (contract) {
+                  orchestrationLayer.engine.setResult(_lastAlias, contract.keyResult, contract);
+                }
+              }
+              // 标记调度器完成
+              orchestrationLayer.scheduler.markCompleted(_lastAlias);
+            } catch (e) {
+              appendLog('orchestration', 'afterTask error', e);
+            }
+          }
         }
       } catch (err) {
         appendLog('tool.execute.after', 'hook 失败', err);
@@ -560,6 +604,19 @@ const CoHubPlugin: Plugin = async (input, options) => {
         if (e.type === 'session.idle') {
           tracker.updateByChildSessionId(sessionId, 'completed');
           syncTrackerState(tracker.currentParentSessionId);
+
+          // 新增：orchestration session.idle 状态转换
+          if (orchestrationLayer) {
+            try {
+              const job = tracker.getJobBySessionId(sessionId);
+              if (job) {
+                orchestrationLayer.engine.transition(job.alias, 'completed');
+                orchestrationLayer.scheduler.markCompleted(job.alias);
+              }
+            } catch (e) {
+              appendLog('orchestration', 'session.idle transition error', e);
+            }
+          }
 
           // 新增：捕获子代理结果用于依赖传播 + 质量回送（P0-1 负反馈闭环）
           const job = tracker.getJobBySessionId(sessionId);
@@ -589,9 +646,51 @@ const CoHubPlugin: Plugin = async (input, options) => {
         } else if (e.type === 'session.deleted') {
           tracker.updateByChildSessionId(sessionId, 'errored');
           syncTrackerState(tracker.currentParentSessionId);
+
+          // 新增：orchestration session.deleted 状态转换 + 自动重试
+          if (orchestrationLayer) {
+            try {
+              const job = tracker.getJobBySessionId(sessionId);
+              if (job) {
+                orchestrationLayer.engine.transition(job.alias, 'failed');
+                orchestrationLayer.scheduler.markFailed(job.alias);
+                // 自动重试
+                const task = orchestrationLayer.engine.getTask(job.alias);
+                if (task) {
+                  const decision = orchestrationLayer.retryMgr.decide(task, 'session deleted');
+                  if (decision === 'retry') {
+                    orchestrationLayer.engine.transition(job.alias, 'pending');
+                  }
+                }
+              }
+            } catch (e) {
+              appendLog('orchestration', 'session.deleted transition error', e);
+            }
+          }
         } else if (e.type === 'session.error') {
           tracker.updateByChildSessionId(sessionId, 'errored');
           syncTrackerState(tracker.currentParentSessionId);
+
+          // 新增：orchestration session.error 状态转换 + 自动重试
+          if (orchestrationLayer) {
+            try {
+              const job = tracker.getJobBySessionId(sessionId);
+              if (job) {
+                orchestrationLayer.engine.transition(job.alias, 'failed');
+                orchestrationLayer.scheduler.markFailed(job.alias);
+                // 自动重试
+                const task = orchestrationLayer.engine.getTask(job.alias);
+                if (task) {
+                  const decision = orchestrationLayer.retryMgr.decide(task, 'session error');
+                  if (decision === 'retry') {
+                    orchestrationLayer.engine.transition(job.alias, 'pending');
+                  }
+                }
+              }
+            } catch (e) {
+              appendLog('orchestration', 'session.error transition error', e);
+            }
+          }
         }
       } catch (err) {
         appendLog('event', '事件处理失败', err);
