@@ -1,4 +1,27 @@
 # CHANGELOG
+## [1.13.0] - 2026-09-03
+
+### 新增
+- **编排引擎（Orchestration Engine）**：`src/orchestration/` 6 个模块 ~580 行，通过代码级保障 orchestrator 编排可靠性
+  - 状态机引擎（engine.ts）：六状态 DAG（pending→ready→running→completed/failed→pending/cancelled），级联取消
+  - 重试管理器（retry.ts）：指数退避 + 降级路由，按 agent 类型配置重试策略
+  - 上下文契约（contract.ts）：`<!-- CONTRACT_BEGIN/END -->` 标记块，子代理间结构化上下文传递
+  - 调度器（scheduler.ts）：全局并发控制，maxConcurrency=20，DAG 依赖自然控制并行度
+  - 集成入口（index.ts）：工厂函数 + 3 个 hook 集成点（tool.execute.before/after + event）
+  - orchestrator 提示词更新为"引擎驱动"工作流
+- `close_job` 工具：主代理可按 Session ID 或任务别名真正中止卡住的子代理后台任务（session.abort + 任务状态同步），仅 co-orchestrator 可调用，其余代理配置层 deny 双层防护
+- 定时清理增强：超时后台任务自动执行真实 abort，不再残留幽灵 running 状态
+- TaskTracker 新增 abortJob 方法与幂等守卫；cleanupStaleJobs 返回超时会话列表
+- 新增 tracker 单元测试 10 用例（pending abort / 重复 abort 幂等 / 终态守卫边界）
+
+### 变更
+- fixer/designer 提示词新增"最小实现自查阶梯"（复用优先、拒绝投机抽象；安全与验证永不省略）
+- oracle 审查清单新增"该删没删的代码"与"过度工程检测"维度
+- 默认并发上限从 5 提升到 20，让 DAG 依赖和 orchestrator 规则自然控制并行度
+
+### 移除
+- （无）
+
 ## [1.13.0-beta.1] - 2026-08-27
 
 ### 新增
