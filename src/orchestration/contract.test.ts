@@ -10,15 +10,17 @@ interface ExpectResult {
   toBe(expected: unknown): void;
   toEqual(expected: unknown): void;
   toContain(expected: unknown): void;
+  toMatch(expected: RegExp): void;
   toBeNull(): void;
   notToBeNull(): void;
+  toBeLessThan(expected: number): void;
   readonly not: Omit<ExpectResult, 'not'>;
 }
 declare function describe(name: string, fn: () => void): void;
 declare function it(name: string, fn: () => void): void;
 declare function expect(actual: unknown): ExpectResult;
 
-import { ContractManager } from './contract';
+import { ContractManager, stripExistingContracts } from './contract';
 
 describe('ContractManager', () => {
   // extract
@@ -77,5 +79,48 @@ describe('ContractManager', () => {
     expect(summary).toContain('A 完成');
     expect(summary).toContain('D 完成');
     expect(summary).toContain('注意 F');
+  });
+});
+
+describe('stripExistingContracts', () => {
+  const block = '<!-- CONTRACT_BEGIN -->\n- 关键结果: 测试\n<!-- CONTRACT_END -->';
+
+  it('should remove a single CONTRACT block', () => {
+    const text = `前置内容\n${block}\n后置内容`;
+    const result = stripExistingContracts(text);
+    expect(result).not.toContain('CONTRACT_BEGIN');
+    expect(result).not.toContain('CONTRACT_END');
+    expect(result).toContain('前置内容');
+    expect(result).toContain('后置内容');
+    expect(result).toBe('前置内容\n\n后置内容');
+  });
+
+  it('should remove 30 CONTRACT blocks (g flag)', () => {
+    const text = Array.from({ length: 30 }, () => block).join('\n');
+    const result = stripExistingContracts(text);
+    expect(result).not.toContain('CONTRACT_BEGIN');
+    expect(result).not.toContain('CONTRACT_END');
+    expect(result).not.toMatch(/<!-- CONTRACT/);
+    // 块间换行符残留不影响功能，验证长度足够小
+    expect(result.length).toBeLessThan(30);
+  });
+
+  it('should return text unchanged when no CONTRACT block', () => {
+    const text = '普通文本，不含契约块';
+    const result = stripExistingContracts(text);
+    expect(result).toBe('普通文本，不含契约块');
+  });
+
+  it('should preserve exactly one CONTRACT_BEGIN in buildPrompt output', () => {
+    const mgr = new ContractManager();
+    const prompt = mgr.buildPrompt({
+      goal: '测试目标',
+      prerequisites: [],
+      constraints: [],
+    });
+    const beginCount = (prompt.match(/CONTRACT_BEGIN/g) || []).length;
+    const endCount = (prompt.match(/CONTRACT_END/g) || []).length;
+    expect(beginCount).toBe(1);
+    expect(endCount).toBe(1);
   });
 });

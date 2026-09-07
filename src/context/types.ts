@@ -47,6 +47,10 @@ export interface ContextConfig {
   summarizeMaxTokens: number;
   /** 从父 session 中扫描最近多少条消息 */
   relevantMessageWindow: number;
+  /** 错误列表总字符上限 */
+  maxErrorTotalChars: number;
+  /** 依赖结果 keyOutput 截断字符数 */
+  dependencyKeyOutputChars: number;
 }
 
 /** 默认配置 */
@@ -71,4 +75,6 @@ export const DEFAULT_CONTEXT_CONFIG: ContextConfig = {
   dependencyPropagation: true,
   summarizeMaxTokens: 2000,
   relevantMessageWindow: 20,
+  maxErrorTotalChars: 600,
+  dependencyKeyOutputChars: 200,
 };

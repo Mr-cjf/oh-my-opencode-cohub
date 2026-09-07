@@ -26,6 +26,11 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { appendLog } from './utils/log.js';
 import { createOrchestrationLayer } from './orchestration';
+import { stripExistingContracts } from './orchestration/contract';
+import { enforcePromptBudget } from './context/extractor';
+
+/** 默认 prompt 最大 token 数（超过此值的 CoHub 注入将被整体降级为裸用户 prompt） */
+const DEFAULT_PROMPT_MAX_TOKENS = 12_000;
 
 /** 中文提示词映射表 */
 const CHINESE_PROMPTS: Record<string, string> = {
@@ -458,6 +463,10 @@ const CoHubPlugin: Plugin = async (input, options) => {
     'tool.execute.before': async (input, output) => {
       try {
         if (input.tool === 'task') {
+          // 在一切注入前捕获原始用户 prompt（用于后续预算兜底降级）
+          const rawPrompt = typeof output.args?.prompt === 'string' ? output.args.prompt : '';
+          const rawDesc = typeof output.args?.description === 'string' ? output.args.description : '';
+          const basePrompt = rawPrompt || rawDesc || '';
           const args = output.args ?? {};
           const subagentType = typeof args.subagent_type === 'string' ? args.subagent_type : '';
           const description = typeof args.description === 'string' ? args.description : '';
@@ -475,6 +484,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
           });
           _lastAlias = alias;
           syncTrackerState(input.sessionID ?? '');
+          tracker.pruneTerminalJobs(30 * 60 * 1000); // 清理超 30 分钟未更新的终态 job，防止 jobs Map 无限膨胀
 
           // 注册到 orchestration engine
           if (orchestrationLayer && subagentType && description) {
@@ -488,6 +498,8 @@ const CoHubPlugin: Plugin = async (input, options) => {
               // 注入契约上下文到 prompt
               const targetField = output.args?.prompt ? 'prompt' : 'description';
               if (output.args?.[targetField] && typeof output.args[targetField] === 'string') {
+                // 先清除历史残留的 CONTRACT 块，再追加唯一新块（防重复膨胀 30~80 次）
+                output.args[targetField] = stripExistingContracts(output.args[targetField]);
                 output.args[targetField] += '\n' + orchestrationLayer.contractMgr.buildPrompt({
                   goal: description,
                   prerequisites: [],
@@ -549,6 +561,11 @@ const CoHubPlugin: Plugin = async (input, options) => {
               }) + '\n');
 
             }
+          }
+          // 全局预算兜底：超限时自动降级为裸用户 prompt，保证 JSON 永不超限
+          const targetField = typeof output.args?.prompt === 'string' ? 'prompt' : 'description';
+          if (output.args?.[targetField] && typeof output.args[targetField] === 'string') {
+            output.args[targetField] = enforcePromptBudget(basePrompt, output.args[targetField], DEFAULT_PROMPT_MAX_TOKENS);
           }
         }
       } catch (err) {

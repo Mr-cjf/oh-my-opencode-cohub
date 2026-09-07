@@ -4,6 +4,16 @@
 import type { AgentContract } from './types';
 
 const CONTRACT_PATTERN = /<!-- CONTRACT_BEGIN -->\n([\s\S]*?)<!-- CONTRACT_END -->/;
+const CONTRACT_STRIP_PATTERN = /<!-- CONTRACT_BEGIN -->[\s\S]*?<!-- CONTRACT_END -->/g;
+
+/**
+ * 删除文本中所有 `<!-- CONTRACT_BEGIN -->...<!-- CONTRACT_END -->` 块。
+ * 用于防止同一次 task() 的 prompt 中契约块重复膨胀。
+ * 无匹配时原样返回。
+ */
+export function stripExistingContracts(text: string): string {
+  return text.replace(CONTRACT_STRIP_PATTERN, '');
+}
 
 export class ContractManager {
   /**
