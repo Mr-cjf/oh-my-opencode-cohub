@@ -1,4 +1,15 @@
 # CHANGELOG
+## [1.13.2] - 2026-09-03
+
+### 修复
+- 根治 CoHub 注入导致的 task prompt JSON 超长问题（`Unterminated string in JSON`，84K+ 处截断）
+  - 总量兜底：`enforcePromptBudget` 拼接超 12,000 token 时降级为裸用户 prompt，JSON 从根上不再超限
+  - CONTRACT 去重：`stripExistingContracts` 一次清空历史残留 30~80 个契约块
+  - 错误防滚雪球：单条错误 ≤200 字符 + 渲染总量 ≤600，失败原文不再整段带入下一条
+  - 依赖截断：captureResult 500→200 + 渲染端双保险
+  - 无关文件过滤：denylist 精确锚点，不误伤同名项目源码
+  - Job Board 折叠 15 条 + `pruneTerminalJobs` 接入运行时清理 30 分钟终态任务
+
 ## [1.13.1] - 2026-09-03
 
 ### 变更
