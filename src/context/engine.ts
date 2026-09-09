@@ -168,15 +168,29 @@ export class ContextEngine {
 
     if (context.errors.length > 0) {
       parts.push('### ⚠️ 近期错误');
+      let totalChars = 0;
+      let omitted = 0;
       for (const e of context.errors) {
-        parts.push(`- ${e}`);
+        const line = `- ${e}`;
+        if (totalChars + line.length > this.config.maxErrorTotalChars) {
+          omitted++;
+        } else {
+          parts.push(line);
+          totalChars += line.length;
+        }
+      }
+      if (omitted > 0) {
+        parts.push(`…（错误已省略 ${omitted} 条）`);
       }
     }
 
     if (context.dependencies.length > 0) {
       parts.push('### 📦 依赖结果');
       for (const dep of context.dependencies) {
-        parts.push(`- **${dep.agent}**: ${dep.keyOutput}`);
+        const output = dep.keyOutput.length > this.config.dependencyKeyOutputChars
+          ? dep.keyOutput.slice(0, this.config.dependencyKeyOutputChars) + '…'
+          : dep.keyOutput;
+        parts.push(`- **${dep.agent}**: ${output}`);
       }
     }
 
@@ -214,7 +228,7 @@ export class ContextEngine {
         }
         for (const part of messages[i].parts ?? []) {
           if (part.type === 'text' && part.text) {
-            keyOutput = part.text.slice(0, 500).replace(/\n/g, ' ');
+            keyOutput = part.text.slice(0, this.config.dependencyKeyOutputChars).replace(/\n/g, ' ');
             break;
           }
         }

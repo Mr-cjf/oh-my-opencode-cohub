@@ -260,8 +260,14 @@ export class TaskTracker {
 
     if (activeJobs.length > 0) {
       lines.push('#### Active / Unreconciled');
-      for (const j of activeJobs) {
+      const maxShow = 15;
+      const shown = activeJobs.slice(0, maxShow);
+      for (const j of shown) {
         lines.push(`  - ${j.agent} / ${j.status} / ${j.sessionId || 'pending'} / alias=${j.alias}`);
+      }
+      const extra = activeJobs.length - maxShow;
+      if (extra > 0) {
+        lines.push(`  …及 ${extra} 个任务未显示`);
       }
       lines.push('');
     }
@@ -270,8 +276,14 @@ export class TaskTracker {
       lines.push('#### Reusable Sessions');
       lines.push('  Session ID                            | Agent        | Alias');
       lines.push('  ---------------------------------------|--------------|-------');
-      for (const j of reusableJobs) {
+      const maxShow = 15;
+      const shown = reusableJobs.slice(0, maxShow);
+      for (const j of shown) {
         lines.push(`  \`${j.sessionId}\`  | ${j.agent}  | _${j.alias}_`);
+      }
+      const extra = reusableJobs.length - maxShow;
+      if (extra > 0) {
+        lines.push(`  …及 ${extra} 个任务未显示`);
       }
       lines.push('');
     }
@@ -308,6 +320,27 @@ export class TaskTracker {
     }
     this.persistStats();
     return staleSessions;
+  }
+
+  /**
+   * 清理超龄终态任务：删除 terminalReconciled 且超过 olderThanMs 未更新的终态 job。
+   * 绝不会删除 running/pending 的活跃任务。
+   *
+   * @param olderThanMs 超龄阈值（毫秒），超过此时间的终态任务会被删除
+   * @returns 实际删除的任务数量
+   */
+  pruneTerminalJobs(olderThanMs: number): number {
+    const now = Date.now();
+    const toDelete: string[] = [];
+    for (const [alias, job] of this.jobs) {
+      if (job.terminalReconciled && job.status !== 'running' && (now - job.createdAt) > olderThanMs) {
+        toDelete.push(alias);
+      }
+    }
+    for (const alias of toDelete) {
+      this.jobs.delete(alias);
+    }
+    return toDelete.length;
   }
 
   /**
