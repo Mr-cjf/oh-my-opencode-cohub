@@ -1,4 +1,13 @@
 # CHANGELOG
+## [1.15.0] - 2026-09-03
+
+### 新增
+- 子代理并行工具调用指令：让 fixer/designer/librarian/rule-app/explorer 在调用工具时尽可能合并并发调用
+  - fixer/designer/rule-app：需改/读多个文件时，同一条消息并行 read 所有目标文件
+  - librarian：同一消息并行调用 context7 + gh_grep + websearch
+  - explorer：在并行搜索基础上补"并行读取多个匹配文件"
+  - 约束：并行仅限互相独立的调用，有依赖的仍串行
+
 ## [1.14.1] - 2026-09-03
 
 ### 修复
