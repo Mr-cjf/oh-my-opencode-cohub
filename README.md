@@ -1,6 +1,6 @@
 # oh-my-opencode-cohub
 
-OpenCode 中文智能体编排插件 CoHub——纯调度模式、全中文提示词、规范分析代理、方案制定代理。
+OpenCode 中文智能体编排插件 CoHub——纯调度模式、全中文提示词、编排引擎、上下文共享、规范分析代理、方案制定代理。
 
 [![GitHub](https://img.shields.io/badge/GitHub-Mr--cjf%2Foh--my--opencode--cohub-blue?logo=github)](https://github.com/Mr-cjf/oh-my-opencode-cohub)
 
@@ -13,9 +13,9 @@ OpenCode 中文智能体编排插件 CoHub——纯调度模式、全中文提�
 - 🇨🇳 **全中文提示词**：12 个代理全部使用中文提示词
 - 📋 **规范分析代理**：rule-user（用户AGENTS.md）、rule-project（项目AGENTS.md）、rule-app（.opencode/rules/）
 - 🎯 **方案制定代理**：planner 综合所有输入输出结构化任务分解
-- 🔗 **OpenSpec + Superpowers 死板路由**：收到需求即触发，不判断"大小"
-- ⚡ **六步工作流**：理解→收集→规范分析→制定方案→调度→验证
-- 📜 **AGENTS.md 全覆盖**：项目级和用户级 AGENTS.md 对**本插件所有代理**（内置 8 个 + 插件 4 个）均生效，无需额外配置
+- 🔗 **编排引擎（Orchestration Engine）**：六状态 DAG 状态机（pending→ready→running→completed/failed→cancelled）、级联取消、按代理配置的自动重试（指数退避/fixed/immediate）、全局并发调度（maxConcurrency=20）
+- ⚡ **Wave 波次并行工作流**：理解→收集→规范分析→制定方案（按依赖分 Wave）→按波次并行调度（区分修改/验证 Wave）→验证，编排引擎代码级保障执行可靠
+- 📜 **AGENTS.md 专用分析代理**：co-rule-user / co-rule-project / co-rule-app 三个专用代理分别分析用户级/项目级 AGENTS.md 与 .opencode/rules，orchestrator 在方案制定前自动委派，分析结果注入执行上下文
 - 📖 **架构借鉴**：插件架构和代理编排理念借鉴了 oh-my-opencode-slim，但完全独立实现、无运行时依赖
 
 ## 安装
@@ -288,7 +288,7 @@ bunx oh-my-opencode-cohub install
 | 代理 | 默认模型 | 职责 | 读取源 |
 |------|----------|------|--------|
 | co-orchestrator | `deepseek/deepseek-v4-pro` | 纯调度：规划→委派→验证 | — |
-| co-oracle | `deepseek/deepseek-v4-flash` | 架构审查/代码审查（含 Superpowers skills） | — |
+| co-oracle | `deepseek/deepseek-v4-flash` | 架构审查/代码审查 | — |
 | co-librarian | `deepseek/deepseek-v4-flash` | 外部文档/API 研究 | — |
 | co-explorer | `deepseek/deepseek-v4-flash` | 代码库搜索定位 | — |
 | co-designer | `minimax/MiniMax-M3` | UI/UX 设计与实现 | — |
@@ -300,7 +300,57 @@ bunx oh-my-opencode-cohub install
 | co-rule-app | `deepseek/deepseek-v4-flash` | 应用规则分析 | `.opencode/rules/*.md` |
 | co-planner | `deepseek/deepseek-v4-flash` | 方案制定 | 综合需求+信息+规则 |
 
-> 模型可通过下文「配置文件」或「自定义模型」章节覆盖。
+> **注意**：上表模型为内置兜底值。安装时 CLI 会根据 `opencode.json` 中已配置的 provider 智能匹配并写入 `oh-my-opencode-cohub.json`；若 `opencode.json` 无 provider 则生成占位配置。最终生效模型以 `oh-my-opencode-cohub.json` 为准，也可通过下文「配置文件」或「自定义模型」章节手动覆盖。
+>
+> **工具权限**：`close_job` 仅 co-orchestrator 可调用；`council_session` 仅 co-council 可调用；其余代理配置层 deny，纵深防御。
+
+## 编排引擎
+
+CoHub 内置轻量编排引擎（`src/orchestration/`，6 模块），通过代码级保障 orchestrator 的编排可靠性，而非仅靠 prompt 约束：
+
+| 组件 | 文件 | 职责 |
+|------|------|------|
+| 状态机引擎 | `engine.ts` | 六状态 DAG：`pending→ready→running→completed/failed/cancelled`，依赖自动检查、级联取消 |
+| 重试管理器 | `retry.ts` | 按代理配置重试策略（指数退避 / fixed / immediate）、可重试错误白名单；降级路由字段已预留 |
+| 上下文契约 | `contract.ts` | `<!-- CONTRACT_BEGIN/END -->` 结构化块：关键结果 / 决策 / 修改文件 / 验证状态 / 待完成 / 警告，子代理间传递并自动去重 |
+| 并发调度器 | `scheduler.ts` | 全局并发上限 `maxConcurrency=20`，DAG 依赖自然控制实际并行度 |
+
+### 关键工具
+
+| 工具 | 可用代理 | 功能 |
+|------|---------|------|
+| `close_job` | 仅 co-orchestrator | 按 Session ID 或任务别名中止卡住的子代理后台任务（`session.abort` + 状态同步） |
+| `council_session` | 仅 co-council | 多模型并行/串行共识：共识检测、重试决策、质量门禁、退避降级 |
+
+### 上下文共享
+
+ContextEngine（`src/context/`）按四种策略自动向子代理注入上下文：
+
+| 策略 | 适用代理 | 注入内容 |
+|------|---------|---------|
+| `none` | explorer / librarian / observer / rule-* | 不注入上下文，减少干扰 |
+| `relevant` | fixer / designer / planner | 相关文件路径 + 前置决策 + 近期错误 |
+| `summary` | oracle / council | 同上，且文件正文按 token 预算（2000）截断后注入 |
+| `full` | （预留） | 完整正文，目前未分配代理 |
+
+### 注入膨胀防护
+
+- **prompt 预算兜底**：拼接超 12,000 token 时降级为裸用户 prompt，防止 JSON 超长截断
+- **CONTRACT 去重**：`stripExistingContracts` 清理历史残留契约块
+- **错误截断**：单条 ≤200 字符 + 渲染总量 ≤600
+- **Job Board 折叠**：展示上限 15 条 + `pruneTerminalJobs` 每 30 分钟清理终态任务
+
+### 质量回送
+
+`quality.ts` 轻量启发式判定：输出非空 + exit 正常 + 无错误关键词（含否定短语感知）+ decisions ≥ 1，四项各 0.25 分。低分仅标记不改变成败判定，供后续调度参考。
+
+### 任务统计
+
+CLI 提供 `stats` 子命令，展示任务成功率 / 平均延迟 / 平均 token：
+
+```bash
+bunx oh-my-opencode-cohub stats [N]    # 查看最近 N 个任务统计（默认 50）
+```
 
 ## 配置文件
 
@@ -377,14 +427,25 @@ CLI 安装后自动创建 `~/.config/opencode/oh-my-opencode-cohub.json`，这�
 
 ## 工作流
 
+CoHub 采用 Wave 波次分组并行模式，由编排引擎代码级保障执行可靠性：
+
 ```
-1. 理解需求
-2. 信息收集（@co-explorer / @co-librarian / @co-observer）
-3. 规范分析（并行 @co-rule-user / @co-rule-project / @co-rule-app）
-4. 制定方案 → @co-planner
-5. 调度执行（@co-fixer / @co-designer 等）
-6. 验证（@co-oracle / @co-designer）
+1. 理解需求（co-orchestrator 分析用户意图）
+2. 信息收集（Wave 1 — 全并行：@co-explorer + @co-librarian + @co-observer）
+3. 规范分析（Wave 1 — 全并行：@co-rule-user + @co-rule-project + @co-rule-app）
+4. 制定方案 → @co-planner（按依赖分 Wave 1/2/3... 输出结构化任务分解）
+5. 调度执行（Wave 2+ — 同一 Wave 内全并行启动）
+   - 修改 Wave：fixer/designer 仅修改文件，不编译/测试
+   - 验证 Wave：所有修改完成后统一编译 + 测试
+6. 验证（@co-oracle 代码审查 + @co-designer 视觉审查）
 ```
+
+编排引擎在此流程中负责：
+
+- 任务注册与 DAG 依赖自动检查，`pending→ready` 自动转换
+- 并发调度不超过 `maxConcurrency`
+- 失败自动重试（按代理策略），超限中止
+- 级联取消：父任务取消时，未完成后继任务标记 cancelled
 
 ## 依赖
 
@@ -480,6 +541,12 @@ npm run build
 
 | 版本 | 日期 | 主要变更 |
 |------|------|---------|
+| [v1.15.0](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.15.0) | 2026-09-03 | 子代理并行工具调用：fixer/designer 同消息并行读文件、librarian 并行外部搜索、explorer 并行读取 |
+| [v1.14.1](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.14.1) | 2026-09-03 | Dependabot 安全修复（3 high + 1 moderate 传递依赖升级） |
+| [v1.14.0](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.14.0) | 2026-09-03 | 修改 Wave vs 验证 Wave 区分：并行改文件不再各自编译，统一编译一次 |
+| [v1.13.2](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.13.2) | 2026-09-03 | 注入膨胀根治：prompt 预算兜底、CONTRACT 去重、错误截断、Job Board 折叠 |
+| [v1.13.1](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.13.1) | 2026-09-03 | Wave 波次分组并行：planner/orchestrator/oracle 提示词重构 |
+| [v1.13.0](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.13.0) | 2026-09-03 | 编排引擎（状态机/重试/契约/调度器）、close_job 工具、并发上限 20 |
 | [v1.12.13](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.12.13) | 2026-08-07 | 修复 messages.transform 仅对最后一条 user 消息做占位修复，恢复含 file-only 历史消息的旧会话时触发 API 空 content 错误 |
 | [v1.12.12](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.12.12) | 2026-08-04 | 子代理模型降级 Flash（适配 DeepSeek-V4-Flash 2026-07-31 增强），仅 orchestrator 保留 Pro；Board 会话复用修复 |
 | [1.12.10-beta.1](https://github.com/Mr-cjf/oh-my-opencode-cohub/releases/tag/v1.12.10-beta.1) | 2026-07-30 | 调度策略优化、四阶段并行决策框架 |
