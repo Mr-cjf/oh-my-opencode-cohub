@@ -1,4 +1,14 @@
 # CHANGELOG
+## [1.14.1] - 2026-09-03
+
+### 修复
+- 修复 Dependabot 安全漏洞（3 high + 1 moderate，均为传递依赖）
+  - `brace-expansion` 2.1.2 → 2.1.4（DoS 内存溢出）
+  - `browserslist` 4.28.5 → 4.28.9（无界内存增长 / 原型写入）
+  - `toml` 4.1.2 → 4.3.0（无界递归 DoS）
+  - `baseline-browser-mapping` 2.10.42 → 2.11.21（进程终止 DoS）
+  - 全部为 patch/minor 升级，零 breaking risk；仅更新 package-lock.json
+
 ## [1.14.0] - 2026-09-03
 
 ### 变更
