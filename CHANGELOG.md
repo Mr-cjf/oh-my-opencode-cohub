@@ -1,5 +1,5 @@
 # CHANGELOG
-## [1.15.2] - 2026-09-15
+## [1.15.3] - 2026-09-15
 
 ### 变更
 - 上下文引擎 `fillContextAsync` 缓存机制改为 in-flight promise 去重：并发同 key 调用共享同一请求，settle 后自动清理，兼顾去重与无脏读
