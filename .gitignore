@@ -24,4 +24,5 @@ references/
 .zcode/
 opencode-patch-kit/
 opencode-patches/
-recovery/
+recovery/**/*.exe
+recovery/**/*.zip
