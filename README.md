@@ -293,7 +293,7 @@ bunx oh-my-opencode-cohub install
 | co-explorer | `deepseek/deepseek-v4-flash` | 代码库搜索定位 | — |
 | co-designer | `minimax/MiniMax-M3` | UI/UX 设计与实现 | — |
 | co-fixer | `deepseek/deepseek-v4-flash` | 代码修改执行（含 TDD skill） | — |
-| co-observer | `codermxtest/gpt-5.5` | 图片/PDF 分析 | — |
+| co-observer | `deepseek/deepseek-v4-flash` | 图片/PDF 分析 | — |
 | co-council | `deepseek/deepseek-v4-flash` | 多模型共识 | — |
 | co-rule-user | `deepseek/deepseek-v4-flash` | 用户级规范分析 | `~/.config/opencode/AGENTS.md` |
 | co-rule-project | `deepseek/deepseek-v4-flash` | 项目级规范分析 | 项目 `AGENTS.md` |
@@ -366,7 +366,7 @@ CLI 安装后自动创建 `~/.config/opencode/oh-my-opencode-cohub.json`，这�
     "co-explorer":    { "model": "deepseek/deepseek-v4-flash", "variant": "low" },
     "co-designer":    { "model": "minimax/MiniMax-M3", "variant": "medium" },
     "co-fixer":       { "model": "deepseek/deepseek-v4-flash", "variant": "high" },
-    "co-observer":    { "model": "codermxtest/gpt-5.5", "variant": "low" },
+    "co-observer":    { "model": "deepseek/deepseek-v4-flash", "variant": "low" },
     "co-council":     { "model": "deepseek/deepseek-v4-flash", "variant": "low" },
     "co-rule-user":   { "model": "deepseek/deepseek-v4-flash", "variant": "medium" },
     "co-rule-project":{ "model": "deepseek/deepseek-v4-flash", "variant": "medium" },
@@ -405,7 +405,7 @@ CLI 安装后自动创建 `~/.config/opencode/oh-my-opencode-cohub.json`，这�
         "alpha": { "model": "deepseek/deepseek-v4-pro", "variant": "max" },
         "beta":  { "model": "deepseek/deepseek-v4-pro", "variant": "max" },
         "gamma": { "model": "minimax/MiniMax-M3", "variant": "medium" },
-        "delta": { "model": "codermxtest/gpt-5.5", "variant": "high" }
+        "delta": { "model": "deepseek/deepseek-v4-flash", "variant": "high" }
       }
     }
   }
