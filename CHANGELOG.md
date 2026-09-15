@@ -1,4 +1,14 @@
 # CHANGELOG
+## [1.15.2] - 2026-09-15
+
+### 变更
+- 上下文引擎 `fillContextAsync` 缓存机制改为 in-flight promise 去重：并发同 key 调用共享同一请求，settle 后自动清理，兼顾去重与无脏读
+- `co-explorer` 提示词新增「搜索策略」段落：首轮宽泛并行、最多 4 轮、结果收敛规则、glob→grep→read 优先级
+- 上下文引擎测试重写为 8 个用例，覆盖并发共享、跨批次无脏读、失败重试、跨 session 隔离
+
+### 修复
+- 修正 `co-observer` 兜底模型残留（`codermxtest/gpt-5.5` → `deepseek/deepseek-v4-flash`），`src/tui.ts` 与 `README.md` 同步
+
 ## [1.15.1] - 2026-09-03
 
 ### 变更
