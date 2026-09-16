@@ -14,6 +14,12 @@ export class ContextEngine {
   private registry = new Map<string, TaskContext>();
   /** alias → 前置子代理结果 */
   private dependencyCache = new Map<string, DependencyResult>();
+  /**
+   * In-flight promise 去重 map：key = `${parentSessionId}::${windowSize}`。
+   * 同批次并发调用共享同一次 API 调用；promise settle 后自动从 Map 删除，
+   * 确保跨批次串行调用重新调 API（无脏读）。
+   */
+  private inflight = new Map<string, Promise<{ files: RelevantFile[]; decisions: string[]; errors: string[] }>>();
   private client: SdkClient;
   private config: ContextConfig;
 
@@ -59,22 +65,42 @@ export class ContextEngine {
 
     try {
       const windowSize = this.config.relevantMessageWindow;
-      const messagesResult = await this.client.session.messages({
-        path: { id: parentSessionId },
-        query: { limit: windowSize },
-      });
-      const messages = (messagesResult.data ?? []) as Array<{
-        info?: { role?: string };
-        parts?: Array<{ type?: string; text?: string; tool?: string; state?: { status?: string; input?: Record<string, unknown>; output?: string; error?: string } }>;
-      }>;
+      const cacheKey = `${parentSessionId}::${windowSize}`;
 
-      if (args.strategy === 'relevant' || args.strategy === 'summary' || args.strategy === 'full') {
-        context.relevantFiles = extractRelevantFiles(messages, this.config.maxFiles, windowSize);
-        context.decisions = extractDecisions(messages, this.config.maxDecisions, windowSize);
-        context.errors = extractErrors(messages, this.config.maxErrors, windowSize);
+      // In-flight promise 去重：同批次并发调用共享同一次 API 调用，
+      // promise settle 后自动从 Map 删除，确保跨批次重新调 API（无脏读）
+      let pending = this.inflight.get(cacheKey);
+      if (!pending) {
+        const p = (async () => {
+          const messagesResult = await this.client.session.messages({
+            path: { id: parentSessionId },
+            query: { limit: windowSize },
+          });
+          const messages = (messagesResult.data ?? []) as Array<{
+            info?: { role?: string };
+            parts?: Array<{ type?: string; text?: string; tool?: string; state?: { status?: string; input?: Record<string, unknown>; output?: string; error?: string } }>;
+          }>;
+
+          if (args.strategy === 'relevant' || args.strategy === 'summary' || args.strategy === 'full') {
+            const files = extractRelevantFiles(messages, this.config.maxFiles, windowSize);
+            const decisions = extractDecisions(messages, this.config.maxDecisions, windowSize);
+            const errors = extractErrors(messages, this.config.maxErrors, windowSize);
+            return { files, decisions, errors };
+          }
+          return { files: [] as RelevantFile[], decisions: [] as string[], errors: [] as string[] };
+        })();
+        this.inflight.set(cacheKey, p);
+        // 无论成功或失败，完成后从 Map 删除（避免脏读 + 避免 unhandled rejection）
+        void p.then(() => this.inflight.delete(cacheKey), () => this.inflight.delete(cacheKey));
+        pending = p;
       }
 
-      // P2-1: 'summary' 真正分道——决策/错误列表全保留，仅文件正文按 summarizeMaxTokens 预算截断
+      const result = await pending;
+      context.relevantFiles = result.files;
+      context.decisions = result.decisions;
+      context.errors = result.errors;
+
+      // 'summary' 策略：提取之后、inflight 之外执行（每个调用者各自执行）
       if (args.strategy === 'summary') {
         this.attachTruncatedBodies(context.relevantFiles);
       }

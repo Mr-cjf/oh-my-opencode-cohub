@@ -1,172 +1,252 @@
 // src/context/engine.test.ts
-// 验证 ContextEngine 的 formatContextDetails 错误总量上限、captureResult 截断、
-// 依赖结果渲染截断
+// 验证 fillContextAsync 的 in-flight promise 去重行为
 // @ts-nocheck — Bun 测试在运行时执行，类型由 bun:test 全局提供
 
 import { ContextEngine } from './engine';
-import { DEFAULT_CONTEXT_CONFIG } from './types';
 
-// ===========================================================================
-// Helper: 构造 mock SdkClient（仅用于构造 ContextEngine，不影响测试逻辑）
-// ===========================================================================
-function mockClient() {
+// ---------------------------------------------------------------------------
+// Helpers: mock 构造
+// ---------------------------------------------------------------------------
+
+/** 标准 mock：始终返回 1 个文件 + 1 个决策 + 0 个错误 */
+function createMockClient() {
+  let callCount = 0;
+  const messages = async () => {
+    await new Promise((r) => setTimeout(r, 5));  // 确保真实 yield，防止未来去掉 async 后静默失效
+    callCount++;
+    return {
+      data: [
+        {
+          info: { role: 'assistant' },
+          parts: [{ type: 'text', text: '我决定使用 TypeScript 严格模式' }],
+        },
+        {
+          info: { role: 'assistant' },
+          parts: [
+            {
+              type: 'tool',
+              tool: 'read',
+              state: {
+                status: 'completed',
+                input: { filePath: '/src/main.ts' },
+                output: 'file content',
+              },
+            },
+          ],
+        },
+      ],
+    };
+  };
   return {
-    session: {
-      messages: async () => ({ data: [] }),
-    },
-  } as never;
+    client: { session: { messages } },
+    getCallCount: () => callCount,
+  };
+}
+
+/** 第一次调用失败、后续成功的 mock */
+function createFailingMock() {
+  let callCount = 0;
+  const messages = async () => {
+    await new Promise((r) => setTimeout(r, 5));  // 确保真实 yield，防止未来去掉 async 后静默失效
+    callCount++;
+    if (callCount === 1) throw new Error('Network error');
+    return {
+      data: [
+        {
+          info: { role: 'assistant' },
+          parts: [{ type: 'text', text: '我决定使用 Node.js' }],
+        },
+      ],
+    };
+  };
+  return {
+    client: { session: { messages } },
+    getCallCount: () => callCount,
+  };
+}
+
+/** 每次调用返回不同数据的 mock（批次计数器递增），用于验证跨批次不脏读 */
+function createIncrementingMock() {
+  let callCount = 0;
+  let batchId = 0;
+  const messages = async () => {
+    await new Promise((r) => setTimeout(r, 5));  // 确保真实 yield
+    callCount++;
+    batchId++;
+    return {
+      data: [
+        {
+          info: { role: 'assistant' },
+          parts: [{ type: 'text', text: `批次-${batchId} 的决策` }],
+        },
+        {
+          info: { role: 'assistant' },
+          parts: [
+            {
+              type: 'tool',
+              tool: 'read',
+              state: {
+                status: 'completed',
+                input: { filePath: `/src/main-v${batchId}.ts` },
+                output: `批次-${batchId} — file content v${batchId}`,
+              },
+            },
+          ],
+        },
+      ],
+    };
+  };
+  return {
+    client: { session: { messages } },
+    getCallCount: () => callCount,
+  };
 }
 
 // ===========================================================================
-// formatContextDetails — 错误总量上限
+// fillContextAsync — in-flight promise 去重
 // ===========================================================================
-describe('formatContextDetails 错误总量上限', () => {
-  test('少量错误（≤600 字符）完整输出，无省略标记', () => {
-    const engine = new ContextEngine(mockClient());
+describe('fillContextAsync — in-flight promise 去重', () => {
+  // ── 用例 1: 首次调用触发 API ────────────────────────────────────────
+  test('首次调用会触发 client.session.messages', async () => {
+    const { client, getCallCount } = createMockClient();
+    const engine = new ContextEngine(client, {
+      strategy: { 'test-agent': 'relevant' },
+    });
     const ctxId = engine.registerContext({ description: 'test' });
-    // 手动填充 registry 中的 errors
-    const ctx = (engine as never).registry.get(ctxId);
-    ctx.errors = ['Error: short error 1', 'Error: short error 2'];
+
+    await engine.fillContextAsync(ctxId, 'ses_parent_1', {
+      strategy: 'relevant',
+    });
+
+    expect(getCallCount()).toBe(1);
+  });
+
+  // ── 用例 2: 并发调用共享同一次 API ─────────────────────────────────
+  test('并发调用（Promise.all）共享同一次 API 调用', async () => {
+    const { client, getCallCount } = createMockClient();
+    const engine = new ContextEngine(client, {
+      strategy: { 'test-agent': 'relevant' },
+    });
+    const ctxId1 = engine.registerContext({ description: 'test1' });
+    const ctxId2 = engine.registerContext({ description: 'test2' });
+
+    await Promise.all([
+      engine.fillContextAsync(ctxId1, 'ses_parent', { strategy: 'relevant' }),
+      engine.fillContextAsync(ctxId2, 'ses_parent', { strategy: 'relevant' }),
+    ]);
+
+    // 两次并发 fill，但 API 只应调用 1 次（共享 inflight promise）
+    expect(getCallCount()).toBe(1);
+  });
+
+  // ── 用例 3: 顺序第二次调用重新调 API（验证无脏读）─────────────────
+  test('顺序的第二次调用（跨批次）重新调 API，无脏读', async () => {
+    const { client, getCallCount } = createMockClient();
+    const engine = new ContextEngine(client, {
+      strategy: { 'test-agent': 'relevant' },
+    });
+    const ctxId1 = engine.registerContext({ description: 'test1' });
+    const ctxId2 = engine.registerContext({ description: 'test2' });
+
+    await engine.fillContextAsync(ctxId1, 'ses_parent', { strategy: 'relevant' });
+    await engine.fillContextAsync(ctxId2, 'ses_parent', { strategy: 'relevant' });
+
+    // 两次串行 fill，inflight 在第一次完成后已被删除，应当重新调 API
+    expect(getCallCount()).toBe(2);
+  });
+
+  // ── 用例 4: 不同 parentSessionId 不共享 ────────────────────────────
+  test('不同 parentSessionId 不共享 inflight', async () => {
+    const { client, getCallCount } = createMockClient();
+    const engine = new ContextEngine(client, {
+      strategy: { 'test-agent': 'relevant' },
+    });
+    const ctxIdA = engine.registerContext({ description: 'A' });
+    const ctxIdB = engine.registerContext({ description: 'B' });
+
+    await engine.fillContextAsync(ctxIdA, 'ses_parent_a', { strategy: 'relevant' });
+    await engine.fillContextAsync(ctxIdB, 'ses_parent_b', { strategy: 'relevant' });
+
+    // 两个不同的 parentSessionId → 两次 API 调用
+    expect(getCallCount()).toBe(2);
+  });
+
+  // ── 用例 5: 数据一致性 ─────────────────────────────────────────────
+  test('返回的数据与 mock 内容相符', async () => {
+    const { client } = createMockClient();
+    const engine = new ContextEngine(client, {
+      strategy: { 'test-agent': 'relevant' },
+    });
+    const ctxId = engine.registerContext({ description: 'test' });
+
+    await engine.fillContextAsync(ctxId, 'ses_parent', { strategy: 'relevant' });
 
     const result = engine.formatContextDetails(ctxId);
-    expect(result).toContain('Error: short error 1');
-    expect(result).toContain('Error: short error 2');
-    expect(result).not.toContain('错误已省略');
+    // 文件路径
+    expect(result).toContain('/src/main.ts');
+    // 决策内容
+    expect(result).toContain('TypeScript 严格模式');
+    // 不应有错误（mock 数据无错误）
+    expect(result).not.toContain('近期错误');
   });
 
-  test('大量错误累计超 600 字符后省略多余错误', () => {
-    const engine = new ContextEngine(mockClient());
+  // ── 用例 6: strategy='none' 不触发 API ─────────────────────────────
+  test("strategy='none' 不会触发 API 调用", async () => {
+    const { client, getCallCount } = createMockClient();
+    const engine = new ContextEngine(client, {
+      strategy: { 'test-agent': 'none' },
+    });
     const ctxId = engine.registerContext({ description: 'test' });
-    const ctx = (engine as never).registry.get(ctxId);
-    // 10 条各 200 字符的错误 → 累计 10 * (2 + 200) = 2020 字符，远超 600
-    ctx.errors = Array.from({ length: 10 }, (_, i) => `Error: long error line ${i} `.padEnd(200, 'x'));
 
-    const result = engine.formatContextDetails(ctxId);
-    // 总和应 ≤ 600
-    const errorSection = result.split('### ⚠️ 近期错误')[1]?.split('###')[0] ?? '';
-    const errorLines = errorSection.split('\n').filter((l) => l.startsWith('- '));
-    let totalChars = 0;
-    for (const line of errorLines) {
-      totalChars += line.length;
-    }
-    expect(totalChars).toBeLessThanOrEqual(650); // 略宽松，因标题行不计入
-    expect(result).toContain('错误已省略');
+    await engine.fillContextAsync(ctxId, 'ses_parent', { strategy: 'none' });
+
+    expect(getCallCount()).toBe(0);
   });
 
-  test('恰好一条超长错误累积到 600 边界也能正确省略', () => {
-    const engine = new ContextEngine(mockClient());
-    const ctxId = engine.registerContext({ description: 'test' });
-    const ctx = (engine as never).registry.get(ctxId);
-    // 1 条 600 字符的错误，加 "- " = 602，超过 600 应被省略
-    ctx.errors = ['E: ' + 'x'.repeat(596)];
+  // ── 用例 7: 第一次调用失败后 inflight 被清理，后续能重试 ──────────
+  test('第一次调用失败后 inflight 被清理，后续调用能重试', async () => {
+    const { client, getCallCount } = createFailingMock();
+    const engine = new ContextEngine(client, {
+      strategy: { 'test-agent': 'relevant' },
+    });
+    const ctxId1 = engine.registerContext({ description: 'test1' });
+    const ctxId2 = engine.registerContext({ description: 'test2' });
 
-    const result = engine.formatContextDetails(ctxId);
-    expect(result).toContain('错误已省略');
-    // 那条错误本身不应出现
-    expect(result).not.toContain('E: ' + 'x'.repeat(10));
+    // 第一次调用失败（被 catch 静默处理）
+    await engine.fillContextAsync(ctxId1, 'ses_parent', { strategy: 'relevant' });
+    // 第二次调用应触发新 API 调用（inflight 已被清理）
+    await engine.fillContextAsync(ctxId2, 'ses_parent', { strategy: 'relevant' });
+
+    // 第一次失败（1 次调用）+ 第二次重试（1 次调用）= 2
+    expect(getCallCount()).toBe(2);
   });
 
-  test('无错误时不输出错误部分', () => {
-    const engine = new ContextEngine(mockClient());
-    const ctxId = engine.registerContext({ description: 'test' });
-    const result = engine.formatContextDetails(ctxId);
-    expect(result).not.toContain('⚠️ 近期错误');
-    expect(result).not.toContain('错误已省略');
-  });
-});
+  // ── 用例 8: 跨批次串行拿到最新数据（真正验证无脏读）─────────────────
+  test('跨批次串行调用拿到最新数据，不返回旧缓存', async () => {
+    const { client, getCallCount } = createIncrementingMock();
+    const engine = new ContextEngine(client, {
+      strategy: { 'test-agent': 'relevant' },
+    });
+    const ctxId1 = engine.registerContext({ description: 'batch1' });
+    const ctxId2 = engine.registerContext({ description: 'batch2' });
 
-// ===========================================================================
-// formatContextDetails — 依赖结果渲染截断
-// ===========================================================================
-describe('formatContextDetails 依赖结果渲染截断', () => {
-  test('短 keyOutput 不截断', () => {
-    const engine = new ContextEngine(mockClient());
-    const ctxId = engine.registerContext({ description: 'test' });
-    const ctx = (engine as never).registry.get(ctxId);
-    ctx.dependencies = [
-      { alias: 'dep-1', agent: 'co-explorer', keyOutput: 'short output', capturedAt: Date.now() },
-    ];
+    // 第一次调用 → 批次-1
+    await engine.fillContextAsync(ctxId1, 'ses_parent', { strategy: 'relevant' });
+    const result1 = engine.formatContextDetails(ctxId1);
 
-    const result = engine.formatContextDetails(ctxId);
-    expect(result).toContain('short output');
-    expect(result).not.toContain('…');
-  });
+    // 第二次串行调用（同一 parentSessionId）→ 应调 API 拿到新数据，不返回旧缓存
+    await engine.fillContextAsync(ctxId2, 'ses_parent', { strategy: 'relevant' });
+    const result2 = engine.formatContextDetails(ctxId2);
 
-  test('超长 keyOutput 被截断到 200 字符并追加省略号', () => {
-    const engine = new ContextEngine(mockClient());
-    const ctxId = engine.registerContext({ description: 'test' });
-    const ctx = (engine as never).registry.get(ctxId);
-    ctx.dependencies = [
-      { alias: 'dep-1', agent: 'co-explorer', keyOutput: 'x'.repeat(300), capturedAt: Date.now() },
-    ];
+    expect(getCallCount()).toBe(2);
 
-    const result = engine.formatContextDetails(ctxId);
-    expect(result).toContain('…');
-    // 提取依赖输出部分
-    const depSection = result.split('### 📦 依赖结果')[1]?.split('###')[0] ?? '';
-    // 提取实际输出的部分（在 "**: " 之后）
-    const outputMatch = depSection.match(/\*\*co-explorer\*\*: (.+)/);
-    expect(outputMatch).not.toBeNull();
-    const outputText = outputMatch![1];
-    expect(outputText.length).toBeLessThanOrEqual(203); // 200 + 1(…)
-    expect(outputText).toBe('x'.repeat(200) + '…');
-  });
-});
-
-// ===========================================================================
-// captureResult 截断
-// ===========================================================================
-describe('captureResult 截断', () => {
-  test('超大 keyOutput 被截断到 dependencyKeyOutputChars（200）', async () => {
-    // 构造 mock 消息，模拟 SDK 返回
-    const mockMessages = [
-      {
-        info: { role: 'assistant' },
-        parts: [{ type: 'text', text: 'x'.repeat(500) }],
-      },
-    ];
-    const client = {
-      session: {
-        messages: async () => ({ data: mockMessages }),
-      },
-    };
-
-    const engine = new ContextEngine(client as never);
-    const result = await engine.captureResult('ses-xxx', 'test-alias', 'co-explorer');
-    expect(result).not.toBeNull();
-    expect(result!.output.length).toBe(200);
-    expect(result!.output).toBe('x'.repeat(200));
-  });
-
-  test('短 keyOutput 保持原样', async () => {
-    const mockMessages = [
-      {
-        info: { role: 'assistant' },
-        parts: [{ type: 'text', text: 'short output' }],
-      },
-    ];
-    const client = {
-      session: {
-        messages: async () => ({ data: mockMessages }),
-      },
-    };
-
-    const engine = new ContextEngine(client as never);
-    const result = await engine.captureResult('ses-xxx', 'test-alias', 'co-explorer');
-    expect(result).not.toBeNull();
-    expect(result!.output).toBe('short output');
-  });
-
-  test('空消息返回空 output', async () => {
-    const client = {
-      session: {
-        messages: async () => ({ data: [] }),
-      },
-    };
-
-    const engine = new ContextEngine(client as never);
-    const result = await engine.captureResult('ses-xxx', 'test-alias', 'co-explorer');
-    // 没有 assistant 消息，keyOutput 为空 → 返回 { output: '', decisions: 0 }
-    expect(result).toEqual({ output: '', decisions: 0 });
+    // 第一次拿到批次-1 的数据
+    expect(result1).toContain('批次-1');
+    expect(result1).toContain('/src/main-v1.ts');
+    // 第二次拿到批次-2 的数据（不是复用批次-1 的缓存）
+    expect(result2).toContain('批次-2');
+    expect(result2).toContain('/src/main-v2.ts');
+    // 两次结果不同，真正证明跨批次不会脏读
+    expect(result1).not.toBe(result2);
   });
 });

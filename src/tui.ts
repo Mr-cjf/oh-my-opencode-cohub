@@ -44,7 +44,7 @@ function DEFAULT_AGENTS(): AgentInfo[] {
     ['co-explorer', 'deepseek/deepseek-v4-flash'],
     ['co-designer', 'minimax/MiniMax-M3'],
     ['co-fixer', 'deepseek/deepseek-v4-flash'],
-    ['co-observer', 'codermxtest/gpt-5.5'],
+    ['co-observer', 'deepseek/deepseek-v4-flash'],
     ['co-council', 'deepseek/deepseek-v4-flash'],
     ['co-rule-user', 'deepseek/deepseek-v4-flash'],
     ['co-rule-project', 'deepseek/deepseek-v4-flash'],

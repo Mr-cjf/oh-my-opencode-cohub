@@ -44,7 +44,7 @@ context: fork
 | 7 | A | 按模板生成完整提交信息（含继承后的表格） | |
 | 8 | A | 预览确认 → `git add` + `git commit` | |
 | 9 | B | **询问用户是否继续发版** | 必须询问 |
-| 10 | B | 前置检查（package.json repository.url、工作区干净） | |
+| 10 | B | 前置检查（repository.url、工作区干净、**版本号未被占用**） | 版本号占用检查 |
 | 11 | B | 分析变更 → 推荐 SemVer 级别（patch/minor/major） | 确认版本号 |
 | 12 | B | 更新 CHANGELOG.md（按 Keep a Changelog 格式） | 新增/修复/变更/移除分类 |
 | 13 | B | 提交 CHANGELOG（`docs: 更新 CHANGELOG vX.Y.Z`） | 先 docs 再 chore |
@@ -233,6 +233,7 @@ context: fork
 - [ ] **10.2 工作区状态**：确认工作区干净（刚提交完应无变更）
 - [ ] **10.3 repository.url 检查**：读取 `package.json`，确认 `repository.url` 指向正确的 GitHub 仓库地址（CI 使用 `--provenance` 校验依赖此项）
 - [ ] **10.4 远程同步检查**：确认本地提交已推送到远程（或准备在步骤15推送）
+- [ ] **10.5 版本号占用检查**：确定目标版本号 `vX.Y.Z` 后，执行 `git tag -l "vX.Y.Z"` 与 `git ls-remote --tags origin "refs/tags/vX.Y.Z"`，**两者都必须为空**。若已被占用（其他分支可能已发布过该版本号），必须改用更高版本号，**严禁删除/覆盖已有 tag**。
 - [ ] 任一检查失败 → 终止发版，提示具体问题
 
 ---
@@ -373,6 +374,7 @@ context: fork
 13. **发版后未验证安装** → 每次发版后必须 `bunx oh-my-opencode-cohub install` + 重启验证
 14. **SemVer 选择错误** → `fix` 用 patch，`feat` 用 minor，`BREAKING CHANGE` 用 major
 15. **CHANGELOG 格式不标准** → 必须使用「新增/修复/变更/移除」四个分类，日期格式 YYYY-MM-DD
+16. **版本号已被占用未检查** → 其他分支可能已发布过同一版本号（如 master 已有 v1.15.2），导致 `npm version` 报 `tag 'vX.Y.Z' already exists`；打 tag 前必须用 `git tag -l` + `git ls-remote --tags` 双重确认
 
 ---
 
@@ -429,3 +431,4 @@ context: fork
 - [ ] CHANGELOG 提交和版本号提交是否分开？
 - [ ] SSH remote 是否已配置？`git push --follow-tags` 是否成功？
 - [ ] 发版后是否重新安装验证？
+- [ ] 打 tag 前是否用 `git tag -l` + `git ls-remote --tags` 确认过版本号未被占用？

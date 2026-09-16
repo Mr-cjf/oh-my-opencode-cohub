@@ -19,3 +19,11 @@ opencode-source/
 
 # 参考资料
 references/
+
+# 本地调试 / 修补工具产物
+.zcode/
+.playwright-mcp/
+opencode-patch-kit/
+opencode-patches/
+recovery/**/*.exe
+recovery/**/*.zip

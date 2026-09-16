@@ -1,4 +1,36 @@
 # CHANGELOG
+## [1.17.0] - 2026-09-16
+
+### 新增
+- 新增 `co_ocr_review` 工具，`co-oracle` 可选调用 [alibaba/open-code-review](https://github.com/alibaba/open-code-review) 做结构化静态审查（逐行评论 + 类别 + 严重级别）
+- 严格软依赖设计：未安装 OCR CLI 时返回引导提示并自动回退到原生审查方式，不影响任何现有功能
+
+### 变更
+- `co-oracle` 提示词新增「OCR 辅助审查」段，明确 preview 优先原则以控制双重 token 开销
+- 工具权限收敛：`co_ocr_review` 仅 `co-oracle` 可调用（代码层 + 权限层双重防御）
+
+## [1.16.0] - 2026-09-15
+
+### 新增
+- 新增 `PARALLEL_TOOL_INSTRUCTION` 并行工具调用总则，经 `experimental.chat.system.transform` hook 统一注入，覆盖全部 12 个代理（含未来新增的代理）
+
+### 修复
+- 修正 `co-observer` 提示词中唯一的串行指令（「逐一分析」→「并行读取」）
+- 修正并行总则中与 `co-orchestrator`「禁止使用 bash」硬性规则冲突的措辞
+
+### 变更
+- 并行工具调用指导从「分散硬编码至 5 个提示词文件」升级为「hook 统一注入」，提示词源文件不再重复承载该指令
+
+## [1.15.3] - 2026-09-15
+
+### 变更
+- 上下文引擎 `fillContextAsync` 缓存机制改为 in-flight promise 去重：并发同 key 调用共享同一请求，settle 后自动清理，兼顾去重与无脏读
+- `co-explorer` 提示词新增「搜索策略」段落：首轮宽泛并行、最多 4 轮、结果收敛规则、glob→grep→read 优先级
+- 上下文引擎测试重写为 8 个用例，覆盖并发共享、跨批次无脏读、失败重试、跨 session 隔离
+
+### 修复
+- 修正 `co-observer` 兜底模型残留（`codermxtest/gpt-5.5` → `deepseek/deepseek-v4-flash`），`src/tui.ts` 与 `README.md` 同步
+
 ## [1.15.2] - 2026-09-12
 
 ### 修复
