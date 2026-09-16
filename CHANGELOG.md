@@ -1,4 +1,14 @@
 # CHANGELOG
+## [1.17.0] - 2026-09-16
+
+### 新增
+- 新增 `co_ocr_review` 工具，`co-oracle` 可选调用 [alibaba/open-code-review](https://github.com/alibaba/open-code-review) 做结构化静态审查（逐行评论 + 类别 + 严重级别）
+- 严格软依赖设计：未安装 OCR CLI 时返回引导提示并自动回退到原生审查方式，不影响任何现有功能
+
+### 变更
+- `co-oracle` 提示词新增「OCR 辅助审查」段，明确 preview 优先原则以控制双重 token 开销
+- 工具权限收敛：`co_ocr_review` 仅 `co-oracle` 可调用（代码层 + 权限层双重防御）
+
 ## [1.16.0] - 2026-09-15
 
 ### 新增
