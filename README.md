@@ -302,7 +302,7 @@ bunx oh-my-opencode-cohub install
 
 > **注意**：上表模型为内置兜底值。安装时 CLI 会根据 `opencode.json` 中已配置的 provider 智能匹配并写入 `oh-my-opencode-cohub.json`；若 `opencode.json` 无 provider 则生成占位配置。最终生效模型以 `oh-my-opencode-cohub.json` 为准，也可通过下文「配置文件」或「自定义模型」章节手动覆盖。
 >
-> **工具权限**：`close_job` 仅 co-orchestrator 可调用；`council_session` 仅 co-council 可调用；其余代理配置层 deny，纵深防御。
+> **工具权限**：`close_job` 仅 co-orchestrator 可调用；`council_session` 仅 co-council 可调用；`co_ocr_review` 仅 co-oracle 可调用；其余代理配置层 deny，纵深防御。
 
 ## 编排引擎
 
@@ -351,6 +351,61 @@ CLI 提供 `stats` 子命令，展示任务成功率 / 平均延迟 / 平均 tok
 ```bash
 bunx oh-my-opencode-cohub stats [N]    # 查看最近 N 个任务统计（默认 50）
 ```
+
+## `co_ocr_review` 工具（可选增强）
+
+> **这不是必装依赖。** 未安装时 CoHub 一切照常工作。
+
+### 它是什么
+
+`co_ocr_review` 是一个**适配器**，用于调用外部代码审查引擎 [alibaba/open-code-review](https://github.com/alibaba/open-code-review)（简称 OCR）。
+
+**CoHub 只实现了「接口」（检测 → 调用 → 解析 → 截断），真正的审查能力在 OCR CLI 中。**
+
+> 类比：写了脚本调用 `ffmpeg` —— 实现的是「调用接口」，不是「视频转码能力」。
+
+### 装了 vs 没装
+
+| 场景 | 行为 |
+|------|------|
+| **已安装 OCR CLI** | `co-oracle` 可调用 `co_ocr_review`，获得**逐行评论 + 行号 + 类别 + 严重级别**的结构化审查结果 |
+| **未安装** | 工具返回安装引导提示（**不报错**），`co-oracle` 静默回退到**原生审查方式**，功能不受影响 |
+
+### 与 `co-oracle` 原生审查的区别
+
+| 维度 | `co-oracle` 原生 | 走 OCR |
+|------|-----------------|--------|
+| 方式 | LLM 自由分析 | 确定性规则 + LLM |
+| 输出 | 段落式报告 | 逐行评论（行号 / 类别 / 严重级别） |
+| 可复现性 | 每次可能不同 | 稳定可复现 |
+| 内置规则 | 靠提示词 | 40+ 语言规则集 |
+| 成本 | 一次 LLM 调用 | 两次（见下方成本提示） |
+
+> 类比：**`co-oracle` 是全科医生，OCR 是专科医生**——小改动看全科即可，大批量变更时专科的行级定位更有价值。
+
+### 如何启用（可选）
+
+```bash
+# 1. 安装 OCR CLI
+npm install -g @alibaba-group/open-code-review
+
+# 2. 配置 LLM（支持 DeepSeek 内置 provider，或自定义 OpenAI 兼容 endpoint）
+ocr config provider
+ocr config model
+ocr llm test
+
+# 3. 重启 OpenCode（可用性检测在插件初始化时缓存，必须重启才生效）
+```
+
+### ⚠️ 成本提示
+
+OCR 会**用自己的 LLM 跑一遍审查**，随后 `co-oracle` 再分析一次结果——**存在双重 token 开销**。
+
+因此工具默认 `preview: true`（仅列出待审文件，**零 LLM 开销**），确认范围合理后再以 `preview: false` 执行真实审查。
+
+### 权限
+
+`co_ocr_review` 仅 `co-oracle` 可调用，其余 11 个代理已配置 `deny`（代码层 + 权限层双重防御）。
 
 ## 配置文件
 
