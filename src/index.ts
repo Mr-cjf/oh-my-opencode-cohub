@@ -21,6 +21,7 @@ import type { ContextStrategy } from './context/types';
 import { loadCoHubConfig, type AgentOverride } from './config/loader';
 import { createCouncilTool, CouncilManager } from './tools/council';
 import { createCloseJobTool } from './tools/job-control';
+import { createOcrReviewTool, detectOcrCli } from './tools/ocr-review';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -300,6 +301,8 @@ const CoHubPlugin: Plugin = async (input, options) => {
   const councilManager = new CouncilManager(input.client, input.directory, councilConfig);
   const councilTools = createCouncilTool(input, councilManager);
   const jobTools = createCloseJobTool(input, tracker, () => syncTrackerState(tracker.currentParentSessionId));
+  const ocrAvailable = await detectOcrCli();
+  const ocrTools = createOcrReviewTool(input, projectDir, ocrAvailable);
 
   // ===== 辅助：从 tool output 中提取子任务 session ID =====
   function extractChildSessionId(output: unknown): string | undefined {
@@ -367,6 +370,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
   const COUNCIL_ONLY_TOOLS = { council_session: 'deny' as const };
   // close_job 仅 co-orchestrator 可用；co-council 不可调用（co-council 用 council_session）
   const ORCHESTRATOR_ONLY_TOOLS = { close_job: 'deny' as const };
+  const OCR_ONLY_TOOLS = { co_ocr_review: 'deny' as const };
   for (const agent of agents) {
     const base = {
       ...agent.config,
@@ -387,6 +391,12 @@ const CoHubPlugin: Plugin = async (input, options) => {
       // co-orchestrator 显式写回 allow：不依赖"无条目默认放行"，防未来全局权限策略收紧时误拦
       base.permission = { ...(base.permission as Record<string, unknown>), close_job: 'allow' as const };
     }
+    // OCR 工具权限：仅 co-oracle 可用，其余 agent 显式 deny
+    if (agent.name !== 'co-oracle') {
+      base.permission = { ...(base.permission as Record<string, unknown>), ...OCR_ONLY_TOOLS };
+    } else {
+      base.permission = { ...(base.permission as Record<string, unknown>), co_ocr_review: 'allow' as const };
+    }
     agentConfigs[agent.name] = base;
   }
 
@@ -397,7 +407,7 @@ const CoHubPlugin: Plugin = async (input, options) => {
     agent: agentConfigs,
 
     // 工具：council_session（多模型并行共识）+ close_job（中止卡住子任务）
-    tool: { ...councilTools, ...jobTools },
+    tool: { ...councilTools, ...jobTools, ...ocrTools },
 
     // 方式二：config hook 再次写入（确保兼容所有模式）
     config: async (cfg: Record<string, unknown>) => {
@@ -429,15 +439,18 @@ const CoHubPlugin: Plugin = async (input, options) => {
         // - 其余代理：双 deny
         const existingPerm0 = (merged.permission as Record<string, unknown>) ?? {};
         if (name === 'co-council') {
-          merged.permission = { ...existingPerm0, council_session: 'allow' as const, ...ORCHESTRATOR_ONLY_TOOLS };
+          merged.permission = { ...existingPerm0, council_session: 'allow' as const, ...ORCHESTRATOR_ONLY_TOOLS, ...OCR_ONLY_TOOLS };
         } else if (name === 'co-orchestrator') {
           merged.permission = {
             ...existingPerm0,
             ...COUNCIL_ONLY_TOOLS,
             close_job: 'allow' as const,
+            ...OCR_ONLY_TOOLS,
           };
+        } else if (name === 'co-oracle') {
+          merged.permission = { ...existingPerm0, ...COUNCIL_ONLY_TOOLS, ...ORCHESTRATOR_ONLY_TOOLS, co_ocr_review: 'allow' as const };
         } else {
-          merged.permission = { ...existingPerm0, ...COUNCIL_ONLY_TOOLS, ...ORCHESTRATOR_ONLY_TOOLS };
+          merged.permission = { ...existingPerm0, ...COUNCIL_ONLY_TOOLS, ...ORCHESTRATOR_ONLY_TOOLS, ...OCR_ONLY_TOOLS };
         }
         c.agent[name] = merged;
       }
