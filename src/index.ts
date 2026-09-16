@@ -12,7 +12,7 @@ import { RULE_USER_PROMPT } from './prompts/rule-user';
 import { RULE_PROJECT_PROMPT } from './prompts/rule-project';
 import { RULE_APP_PROMPT } from './prompts/rule-app';
 import { PLANNER_PROMPT } from './prompts/planner';
-import { CHINESE_LANGUAGE_INSTRUCTION } from './instructions/chinese';
+import { CHINESE_LANGUAGE_INSTRUCTION, PARALLEL_TOOL_INSTRUCTION } from './instructions/chinese';
 import { TaskTracker } from './task-manager/tracker';
 import { assessQuality, isQualityEnabled } from './task-manager/quality';
 import { ContextEngine } from './context/engine';
@@ -300,7 +300,6 @@ const CoHubPlugin: Plugin = async (input, options) => {
   const councilManager = new CouncilManager(input.client, input.directory, councilConfig);
   const councilTools = createCouncilTool(input, councilManager);
   const jobTools = createCloseJobTool(input, tracker, () => syncTrackerState(tracker.currentParentSessionId));
-
   // ===== 辅助：从 tool output 中提取子任务 session ID =====
   function extractChildSessionId(output: unknown): string | undefined {
     if (!output || typeof output !== 'object') return undefined;
@@ -800,10 +799,11 @@ const CoHubPlugin: Plugin = async (input, options) => {
     },
 
     'experimental.chat.system.transform': async (input, output) => {
-      // 将中文语言指令注入到系统提示词中
+      // 将中文语言指令和并行工具调用指令注入到系统提示词中
       try {
         if (output?.system && Array.isArray(output.system)) {
           output.system.push(CHINESE_LANGUAGE_INSTRUCTION);
+          output.system.push(PARALLEL_TOOL_INSTRUCTION);
         }
       } catch (err) {
         appendLog('system.transform', 'hook 失败', err);
